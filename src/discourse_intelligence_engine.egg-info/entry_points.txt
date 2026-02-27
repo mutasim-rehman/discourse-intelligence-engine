@@ -1,2 +1,0 @@
-[console_scripts]
-discourse-engine = discourse_engine.__main__:main
