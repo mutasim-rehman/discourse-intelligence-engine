@@ -1,6 +1,7 @@
 README.md
 pyproject.toml
 src/discourse_engine/__init__.py
+src/discourse_engine/__main__.py
 src/discourse_engine/main.py
 src/discourse_engine/analyzers/__init__.py
 src/discourse_engine/analyzers/base.py
@@ -18,6 +19,7 @@ src/discourse_engine/utils/text_utils.py
 src/discourse_intelligence_engine.egg-info/PKG-INFO
 src/discourse_intelligence_engine.egg-info/SOURCES.txt
 src/discourse_intelligence_engine.egg-info/dependency_links.txt
+src/discourse_intelligence_engine.egg-info/entry_points.txt
 src/discourse_intelligence_engine.egg-info/requires.txt
 src/discourse_intelligence_engine.egg-info/top_level.txt
 tests/test_pipeline.py

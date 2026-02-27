@@ -33,6 +33,23 @@ pip install -e .
 
 ## Usage
 
+### CLI (interactive)
+
+```bash
+python -m discourse_engine
+```
+
+Then paste or type your text and press Enter twice (blank line) when done. The analysis report is printed to the console.
+
+You can also pass text as arguments or pipe it:
+
+```bash
+python -m discourse_engine "Either we pass this law, or our nation will collapse."
+echo "Your text here" | python -m discourse_engine
+```
+
+### Python API
+
 ```python
 from discourse_engine import run_pipeline, format_report
 
