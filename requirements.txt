@@ -1,0 +1,9 @@
+# Discourse Intelligence Engine - Skeleton dependencies
+# Python >= 3.11 required
+
+# Optional for enhanced tokenization:
+# nltk>=3.8
+
+# For LLM-based hidden assumption extraction (future):
+# openai>=1.0
+# anthropic>=0.18
