@@ -59,6 +59,19 @@ def test_logical_fallacy_flags() -> None:
     assert "Appeal to Fear" in fallacy_names
 
 
+def test_false_dilemma_vs_genuine_dichotomy() -> None:
+    """False dilemma is flagged only when options are not exhaustive (X vs Y, not X vs not-X)."""
+    # Genuine dichotomy: X vs not-X — should NOT be flagged
+    report_dichotomy = run_pipeline("Either the file exists or it doesn't.")
+    fallacy_names_dichotomy = [f.name for f in report_dichotomy.logical_fallacy_flags]
+    assert "False Dilemma" not in fallacy_names_dichotomy
+
+    # False dilemma: X vs Y (non-exhaustive) — should be flagged
+    report_false = run_pipeline("Either you support this bill or you hate this country.")
+    fallacy_names_false = [f.name for f in report_false.logical_fallacy_flags]
+    assert "False Dilemma" in fallacy_names_false
+
+
 def test_format_report_produces_expected_sections() -> None:
     """Formatted report contains all expected sections."""
     report = run_pipeline(SAMPLE_TEXT)
