@@ -1,15 +1,16 @@
 # Discourse Intelligence Engine
 
-An NLP-driven system for analyzing the structural logic and ideological patterns embedded in language. The engine identifies hidden assumptions, logical fallacies, emotional trigger words, tone shifts, and framing strategies across political discourse, interviews, novels, and film scripts.
+An NLP-driven system for analyzing the structural logic and ideological patterns embedded in language. The engine identifies hidden assumptions, logical fallacies, emotional trigger words, hidden agendas, tone shifts, and framing strategies across political discourse, interviews, novels, and film scripts.
 
 ## Features
 
 - **Basic statistics**: Word and sentence counts
-- **Trigger word profile**: Fear, authority, and identity framing levels
-- **Tone summary**: Urgent, defensive, fear-oriented, etc.
+- **Trigger word profile**: Fear, authority, and identity framing levels (lexicon-based)
+- **Tone summary**: Urgent, defensive, fear-oriented
 - **Modal and pronoun analysis**: Authority usage and in-group/out-group framing
 - **Logical fallacy flags**: Pattern-based detection (false dilemma, appeal to fear, ad hominem)
-- **Hidden assumption extraction**: LLM-based (stub in skeleton; extend with API)
+- **Hidden assumption extraction**: Rule-based (presuppositions, enthymemes, epistemic shortcuts)
+- **Hidden agenda flags**: Rule-based (deflecting, dividing, asserting, personalizing, framing)
 
 ## Installation
 
@@ -19,17 +20,14 @@ pip install -e .
 
 ## Usage
 
-### CLI (interactive)
+### CLI
 
 ```bash
+# Interactive: paste text, blank line when done
 python -m discourse_engine
-```
+# or: discourse-engine
 
-Then paste or type your text and press Enter twice (blank line) when done. The analysis report is printed to the console.
-
-You can also pass text as arguments or pipe it:
-
-```bash
+# From args or pipe
 python -m discourse_engine "Either we pass this law, or our nation will collapse."
 echo "Your text here" | python -m discourse_engine
 ```
@@ -53,15 +51,20 @@ print(format_report(report))
 
 ```
 src/discourse_engine/
-├── main.py           # Pipeline entry point
-├── models/           # Report, config, data models
-├── analyzers/        # Modular analysis components
-├── lexicons/         # Keyword lists for trigger/fallacy detection
+├── main.py           # Pipeline entry point and report formatting
+├── models/           # Report, Config, TriggerProfile, FallacyFlag, AgendaFlag
+├── analyzers/        # Modular analysis components (7 analyzers)
+├── lexicons/         # JSON keyword lists (fear, authority, identity)
 └── utils/            # Text preprocessing helpers
 ```
 
+## Documentation
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — Detailed description of each layer, underlying logic, and examples
+- **[FUTURE_WORK.md](FUTURE_WORK.md)** — Features not yet implemented and planned enhancements
+
 ## Extensibility
 
-- Add new analyzers by implementing the `Analyzer` protocol
-- Swap lexicon JSON files for domain-specific vocabularies
-- Configure LLM provider and model for hidden assumption extraction
+- Add new analyzers by implementing the analysis interface
+- Swap or extend lexicon JSON files for domain-specific vocabularies
+- Configure optional LLM provider for future hidden-assumption enhancement
