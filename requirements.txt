@@ -1,6 +1,8 @@
 # Discourse Intelligence Engine - Skeleton dependencies
 # Python >= 3.11 required
 
+youtube-transcript-api>=0.6.0
+
 # Optional for enhanced tokenization:
 # nltk>=3.8
 

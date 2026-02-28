@@ -14,19 +14,29 @@ class TriggerProfile:
 
 @dataclass
 class FallacyFlag:
-    """A detected logical fallacy with its pattern hint."""
+    """A detected logical fallacy with its pattern hint and source sentence."""
 
     name: str
     pattern_hint: str
+    sentence: str
 
 
 @dataclass
 class AgendaFlag:
-    """A detected hidden agenda technique with its pattern hint."""
+    """A detected hidden agenda technique with its pattern hint and source sentence."""
 
     family: str
     technique: str
     pattern_hint: str
+    sentence: str
+
+
+@dataclass
+class AssumptionFlag:
+    """A detected hidden assumption with its description and source sentence."""
+
+    description: str
+    sentence: str
 
 
 @dataclass
@@ -41,5 +51,5 @@ class Report:
     pronoun_framing: dict[str, int]
     pronoun_insight: str | None
     logical_fallacy_flags: list[FallacyFlag]
-    hidden_assumptions: list[str]
+    hidden_assumptions: list[AssumptionFlag]
     hidden_agenda_flags: list[AgendaFlag]
