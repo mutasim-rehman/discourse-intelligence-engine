@@ -5,7 +5,8 @@ from discourse_engine.models.report import (
     TriggerProfile,
     FallacyFlag,
     AgendaFlag,
+    AssumptionFlag,
 )
 from discourse_engine.models.config import Config
 
-__all__ = ["Report", "TriggerProfile", "FallacyFlag", "AgendaFlag", "Config"]
+__all__ = ["Report", "TriggerProfile", "FallacyFlag", "AgendaFlag", "AssumptionFlag", "Config"]

@@ -3,6 +3,10 @@
 import re
 
 from discourse_engine.models.report import FallacyFlag
+from discourse_engine.utils.text_utils import (
+    sentence_containing_offset,
+    split_sentences_with_offsets,
+)
 
 # False dilemma: "either X or Y" — but NOT when Y = not-X (genuine dichotomy)
 FALSE_DILEMMA_PATTERN = re.compile(
@@ -68,17 +72,28 @@ class LogicalFallacyAnalyzer:
         """Return list of FallacyFlag for detected patterns."""
         flags: list[FallacyFlag] = []
         lower = text.lower()
+        sentences_with_offsets = split_sentences_with_offsets(text)
 
-        if FALSE_DILEMMA_PATTERN.search(text) and not _is_genuine_dichotomy(text):
-            flags.append(FallacyFlag("False Dilemma", "pattern: either X or Y"))
+        def _sentence_at(match: re.Match) -> str:
+            return sentence_containing_offset(sentences_with_offsets, match.start())
+
+        m = FALSE_DILEMMA_PATTERN.search(text)
+        if m and not _is_genuine_dichotomy(text):
+            flags.append(FallacyFlag("False Dilemma", "pattern: either X or Y", _sentence_at(m)))
 
         if any(t in lower for t in FEAR_TERMS):
-            flags.append(FallacyFlag("Appeal to Fear", "threat language"))
+            fear_match = next(
+                (re.search(rf"\b{re.escape(t)}\b", text, re.IGNORECASE) for t in FEAR_TERMS if t in lower),
+                None,
+            )
+            sent = _sentence_at(fear_match) if fear_match else (sentences_with_offsets[0][0] if sentences_with_offsets else "")
+            flags.append(FallacyFlag("Appeal to Fear", "threat language", sent))
 
         for pat in ATTACK_PATTERNS:
-            if pat.search(text):
+            m = pat.search(text)
+            if m:
                 flags.append(
-                    FallacyFlag("Ad Hominem / Attack", "they want to [verb] pattern")
+                    FallacyFlag("Ad Hominem / Attack", "they want to [verb] pattern", _sentence_at(m))
                 )
                 break
 

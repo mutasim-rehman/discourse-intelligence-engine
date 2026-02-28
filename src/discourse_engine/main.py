@@ -73,13 +73,15 @@ def format_report(report: Report) -> str:
     if report.logical_fallacy_flags:
         for f in report.logical_fallacy_flags:
             lines.append(f"- {f.name} ({f.pattern_hint})")
+            lines.append(f'  -> "{f.sentence}"')
     else:
         lines.append("- (none)")
 
     lines.extend(["", "Hidden Assumptions:"])
     if report.hidden_assumptions:
         for a in report.hidden_assumptions:
-            lines.append(f"- {a}")
+            lines.append(f"- {a.description}")
+            lines.append(f'  -> "{a.sentence}"')
     else:
         lines.append("- (none)")
 
@@ -87,6 +89,7 @@ def format_report(report: Report) -> str:
     if report.hidden_agenda_flags:
         for f in report.hidden_agenda_flags:
             lines.append(f"- {f.family} / {f.technique} ({f.pattern_hint})")
+            lines.append(f'  -> "{f.sentence}"')
     else:
         lines.append("- (none)")
 

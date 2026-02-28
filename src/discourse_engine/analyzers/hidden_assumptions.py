@@ -3,6 +3,9 @@
 import re
 from dataclasses import dataclass
 
+from discourse_engine.models.report import AssumptionFlag
+from discourse_engine.utils.text_utils import split_sentences
+
 # ---------------------------------------------------------------------------
 # Presupposition triggers (linguistic constructions that imply unstated beliefs)
 # ---------------------------------------------------------------------------
@@ -77,13 +80,6 @@ SUGGESTIVE_QUESTION_PATTERN = re.compile(
 )
 
 
-def _split_sentences(text: str) -> list[str]:
-    """Split text into sentences."""
-    if not text or not text.strip():
-        return []
-    return [s.strip() for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s.strip()]
-
-
 def _get_words_lower(text: str) -> set[str]:
     """Return set of lowercased words in text."""
     return set(re.findall(r"\b[a-z]+\b", text.lower()))
@@ -91,10 +87,11 @@ def _get_words_lower(text: str) -> set[str]:
 
 @dataclass
 class _AssumptionMatch:
-    """Internal: a detected assumption with optional trigger word."""
+    """Internal: a detected assumption with optional trigger and source sentence."""
 
     description: str
-    trigger: str | None = None
+    trigger: str | None
+    sentence: str
 
 
 def _check_presupposition_triggers(sentence: str) -> list[_AssumptionMatch]:
@@ -108,6 +105,7 @@ def _check_presupposition_triggers(sentence: str) -> list[_AssumptionMatch]:
             matches.append(_AssumptionMatch(
                 "Presupposition: treats something as already established (factive verb)",
                 w,
+                sentence,
             ))
             break
 
@@ -116,6 +114,7 @@ def _check_presupposition_triggers(sentence: str) -> list[_AssumptionMatch]:
             matches.append(_AssumptionMatch(
                 "Presupposition: implies unstated prior action or attempt (implicative verb)",
                 w,
+                sentence,
             ))
             break
 
@@ -124,6 +123,7 @@ def _check_presupposition_triggers(sentence: str) -> list[_AssumptionMatch]:
             matches.append(_AssumptionMatch(
                 "Presupposition: assumes a prior state (change-of-state verb)",
                 w,
+                sentence,
             ))
             break
 
@@ -132,6 +132,7 @@ def _check_presupposition_triggers(sentence: str) -> list[_AssumptionMatch]:
             matches.append(_AssumptionMatch(
                 "Presupposition: implies prior occurrence (repetition/iteration)",
                 w,
+                sentence,
             ))
             break
 
@@ -148,6 +149,7 @@ def _check_epistemic_shortcuts(sentence: str) -> list[_AssumptionMatch]:
             matches.append(_AssumptionMatch(
                 "Presents claim as obvious without justification (epistemic shortcut)",
                 phrase,
+                sentence,
             ))
             break
 
@@ -164,6 +166,7 @@ def _check_universal_quantifiers(sentence: str) -> list[_AssumptionMatch]:
             matches.append(_AssumptionMatch(
                 "Unstated universal claim: implies shared belief or blanket generalization",
                 w,
+                sentence,
             ))
             break
 
@@ -179,6 +182,7 @@ def _check_vague_authority(sentence: str) -> list[_AssumptionMatch]:
             matches.append(_AssumptionMatch(
                 "Vague authority invoked without specification",
                 m.group(0)[:30],
+                sentence,
             ))
             break
     return matches
@@ -192,6 +196,7 @@ def _check_conclusion_markers(sentence: str) -> list[_AssumptionMatch]:
         matches.append(_AssumptionMatch(
             "Conclusion marker suggests inference without full stated premises (enthymeme)",
             m.group(1),
+            sentence,
         ))
     return matches
 
@@ -207,6 +212,7 @@ def _check_loaded_questions(sentence: str) -> list[_AssumptionMatch]:
             matches.append(_AssumptionMatch(
                 "Loaded question: implies an assumption in the question itself",
                 None,
+                sentence,
             ))
             return matches
 
@@ -214,6 +220,7 @@ def _check_loaded_questions(sentence: str) -> list[_AssumptionMatch]:
         matches.append(_AssumptionMatch(
             "Suggestive question: stacked alternatives implying negative traits",
             None,
+            sentence,
         ))
 
     return matches
@@ -234,15 +241,15 @@ class HiddenAssumptionExtractor:
         self.api_key = api_key
         self.model = model
 
-    def analyze(self, text: str) -> list[str]:
+    def analyze(self, text: str) -> list[AssumptionFlag]:
         """
         Extract hidden assumptions from text using rule-based patterns.
-        Returns a list of human-readable assumption descriptions.
+        Returns a list of AssumptionFlag with description and source sentence.
         """
         if not text or not text.strip():
             return []
 
-        sentences = _split_sentences(text)
+        sentences = split_sentences(text)
         all_matches: list[_AssumptionMatch] = []
 
         for sentence in sentences:
@@ -255,11 +262,11 @@ class HiddenAssumptionExtractor:
 
         # Deduplicate by full description (keep first occurrence)
         seen: set[str] = set()
-        result: list[str] = []
+        result: list[AssumptionFlag] = []
         for m in all_matches:
             full = f"{m.description} [trigger: '{m.trigger}']" if m.trigger else m.description
             if full not in seen:
                 seen.add(full)
-                result.append(full)
+                result.append(AssumptionFlag(description=full, sentence=m.sentence))
 
         return result

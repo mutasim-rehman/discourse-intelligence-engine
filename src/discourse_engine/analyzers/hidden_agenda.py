@@ -5,6 +5,10 @@ import re
 from pathlib import Path
 
 from discourse_engine.models.report import AgendaFlag
+from discourse_engine.utils.text_utils import (
+    sentence_containing_offset,
+    split_sentences_with_offsets,
+)
 
 
 def _load_lexicon(lexicon_dir: Path, name: str) -> list[str]:
@@ -122,41 +126,57 @@ class HiddenAgendaAnalyzer:
 
         flags: list[AgendaFlag] = []
         lower = text.lower()
+        sentences_with_offsets = split_sentences_with_offsets(text)
+
+        def _sentence_at(match: re.Match) -> str:
+            return sentence_containing_offset(sentences_with_offsets, match.start())
+
+        def _sentence_for_term(term: str) -> str:
+            m = re.search(rf"\b{re.escape(term)}\b", text, re.IGNORECASE)
+            return _sentence_at(m) if m else (sentences_with_offsets[0][0] if sentences_with_offsets else "")
 
         # Deflecting
         for pat in WHATABOUTISM_PATTERNS:
-            if pat.search(text):
+            m = pat.search(text)
+            if m:
                 flags.append(AgendaFlag(
                     family="Deflecting",
                     technique="Whataboutism",
                     pattern_hint="counter-accusation or deflection ('what about', 'how about')",
+                    sentence=_sentence_at(m),
                 ))
                 break
 
         for pat in SHIFTING_GOALPOST_PATTERNS:
-            if pat.search(text):
+            m = pat.search(text)
+            if m:
                 flags.append(AgendaFlag(
                     family="Deflecting",
                     technique="Shifting Goalpost",
                     pattern_hint="relativizing by redefining ('this is not X, it's Y')",
+                    sentence=_sentence_at(m),
                 ))
                 break
 
         for pat in SIDE_NOTE_PATTERNS:
-            if pat.search(text):
+            m = pat.search(text)
+            if m:
                 flags.append(AgendaFlag(
                     family="Deflecting",
                     technique="Side Note",
                     pattern_hint="diversion or tangential insertion ('Meanwhile', 'In other news')",
+                    sentence=_sentence_at(m),
                 ))
                 break
 
         # Dividing
-        if US_VS_THEM_PRONOUN_PATTERN.search(text):
+        m = US_VS_THEM_PRONOUN_PATTERN.search(text)
+        if m:
             flags.append(AgendaFlag(
                 family="Dividing",
                 technique="Us vs Them",
                 pattern_hint="pronoun polarization ('they want', 'they are')",
+                sentence=_sentence_at(m),
             ))
 
         for w in US_VS_THEM_HOSTILE:
@@ -165,55 +185,67 @@ class HiddenAgendaAnalyzer:
                     family="Dividing",
                     technique="Us vs Them",
                     pattern_hint="dehumanizing or hostile out-group language",
+                    sentence=_sentence_for_term(w),
                 ))
                 break
 
         for pat in GATEKEEPING_PATTERNS:
-            if pat.search(text):
+            m = pat.search(text)
+            if m:
                 flags.append(AgendaFlag(
                     family="Dividing",
                     technique="Gatekeeping",
                     pattern_hint="defining who 'truly' belongs ('only real', 'true patriots')",
+                    sentence=_sentence_at(m),
                 ))
                 break
 
         # Asserting
         for pat in SPECULATION_PATTERNS:
-            if pat.search(text):
+            m = pat.search(text)
+            if m:
                 flags.append(AgendaFlag(
                     family="Asserting",
                     technique="Speculation",
                     pattern_hint="speculative or unconfirmed framing ('rumors', 'allegedly')",
+                    sentence=_sentence_at(m),
                 ))
                 break
 
         for pat in VAGUENESS_AGENDA_PATTERNS:
-            if pat.search(text):
+            m = pat.search(text)
+            if m:
                 flags.append(AgendaFlag(
                     family="Asserting",
                     technique="Vagueness",
                     pattern_hint="vague authority without specification",
+                    sentence=_sentence_at(m),
                 ))
                 break
 
         # Personalizing
         for pat in MUD_HONEY_PATTERNS:
-            if pat.search(text):
+            m = pat.search(text)
+            if m:
                 flags.append(AgendaFlag(
                     family="Personalizing",
                     technique="Mud & Honey",
                     pattern_hint="personal attack or derogatory framing",
+                    sentence=_sentence_at(m),
                 ))
                 break
 
         # Framing (emotional sensationalism)
         fear_lower = [t.lower() for t in self._fear_terms]
-        if any(t in lower for t in fear_lower):
-            flags.append(AgendaFlag(
-                family="Framing",
-                technique="Emotional Sensationalism",
-                pattern_hint="fear or threat language",
-            ))
+        for t in fear_lower:
+            if t in lower:
+                flags.append(AgendaFlag(
+                    family="Framing",
+                    technique="Emotional Sensationalism",
+                    pattern_hint="fear or threat language",
+                    sentence=_sentence_for_term(t),
+                ))
+                break
 
         # Deduplicate by (family, technique)
         seen: set[tuple[str, str]] = set()

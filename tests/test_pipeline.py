@@ -97,6 +97,7 @@ def test_empty_text() -> None:
     assert report.tone == []
     assert report.modal_verbs_detected == []
     assert report.pronoun_framing == {}
+    assert report.hidden_assumptions == []
     assert report.hidden_agenda_flags == []
 
 
@@ -105,7 +106,7 @@ def test_hidden_assumptions_presupposition() -> None:
     text = "He realized the policy had failed. They continued to push for change."
     report = run_pipeline(text)
     assert len(report.hidden_assumptions) >= 1
-    assumption_text = " ".join(report.hidden_assumptions).lower()
+    assumption_text = " ".join(a.description for a in report.hidden_assumptions).lower()
     assert "presupposition" in assumption_text
 
 
@@ -114,7 +115,7 @@ def test_hidden_assumptions_epistemic_shortcut() -> None:
     text = "Obviously, we need to act now. The solution is clearly the best option."
     report = run_pipeline(text)
     assert len(report.hidden_assumptions) >= 1
-    assumption_text = " ".join(report.hidden_assumptions).lower()
+    assumption_text = " ".join(a.description for a in report.hidden_assumptions).lower()
     assert "epistemic" in assumption_text or "obvious" in assumption_text
 
 
@@ -123,7 +124,7 @@ def test_hidden_assumptions_universal_quantifier() -> None:
     text = "Everyone knows this is wrong. Nobody would disagree."
     report = run_pipeline(text)
     assert len(report.hidden_assumptions) >= 1
-    assumption_text = " ".join(report.hidden_assumptions).lower()
+    assumption_text = " ".join(a.description for a in report.hidden_assumptions).lower()
     assert "universal" in assumption_text
 
 
@@ -132,7 +133,7 @@ def test_hidden_assumptions_conclusion_marker() -> None:
     text = "The evidence is in. Therefore we must act."
     report = run_pipeline(text)
     assert len(report.hidden_assumptions) >= 1
-    assumption_text = " ".join(report.hidden_assumptions).lower()
+    assumption_text = " ".join(a.description for a in report.hidden_assumptions).lower()
     assert "conclusion" in assumption_text or "enthymeme" in assumption_text
 
 
@@ -141,7 +142,7 @@ def test_hidden_assumptions_loaded_question() -> None:
     text = "Why do you still support that policy? When did you stop caring?"
     report = run_pipeline(text)
     assert len(report.hidden_assumptions) >= 1
-    assumption_text = " ".join(report.hidden_assumptions).lower()
+    assumption_text = " ".join(a.description for a in report.hidden_assumptions).lower()
     assert "loaded question" in assumption_text
 
 
@@ -150,7 +151,7 @@ def test_hidden_assumptions_vague_authority() -> None:
     text = "Experts agree that this is the best approach. Studies show significant effects."
     report = run_pipeline(text)
     assert len(report.hidden_assumptions) >= 1
-    assumption_text = " ".join(report.hidden_assumptions).lower()
+    assumption_text = " ".join(a.description for a in report.hidden_assumptions).lower()
     assert "vague" in assumption_text or "authority" in assumption_text
 
 
