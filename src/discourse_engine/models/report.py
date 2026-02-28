@@ -21,6 +21,15 @@ class FallacyFlag:
 
 
 @dataclass
+class AgendaFlag:
+    """A detected hidden agenda technique with its pattern hint."""
+
+    family: str
+    technique: str
+    pattern_hint: str
+
+
+@dataclass
 class Report:
     """Structured analysis report output."""
 
@@ -33,3 +42,4 @@ class Report:
     pronoun_insight: str | None
     logical_fallacy_flags: list[FallacyFlag]
     hidden_assumptions: list[str]
+    hidden_agenda_flags: list[AgendaFlag]

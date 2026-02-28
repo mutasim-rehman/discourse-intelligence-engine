@@ -23,6 +23,7 @@ def test_run_pipeline_returns_report() -> None:
     assert report.pronoun_framing is not None
     assert report.logical_fallacy_flags is not None
     assert report.hidden_assumptions is not None
+    assert report.hidden_agenda_flags is not None
 
 
 def test_trigger_profile_levels() -> None:
@@ -84,6 +85,7 @@ def test_format_report_produces_expected_sections() -> None:
     assert "Pronoun Framing:" in formatted
     assert "Logical Fallacy Flags:" in formatted
     assert "Hidden Assumptions:" in formatted
+    assert "Hidden Agenda Flags:" in formatted
     assert "Tone:" in formatted
 
 
@@ -95,6 +97,7 @@ def test_empty_text() -> None:
     assert report.tone == []
     assert report.modal_verbs_detected == []
     assert report.pronoun_framing == {}
+    assert report.hidden_agenda_flags == []
 
 
 def test_hidden_assumptions_presupposition() -> None:
@@ -159,3 +162,49 @@ def test_hidden_assumptions_sample_text_detects_some() -> None:
     # Just ensure it doesn't crash and returns a list.
     assert report.hidden_assumptions is not None
     assert isinstance(report.hidden_assumptions, list)
+
+
+def test_hidden_agenda_us_vs_them() -> None:
+    """Us vs them (they want, hostile language) is detected."""
+    report = run_pipeline(SAMPLE_TEXT)
+    agenda_techniques = [f.technique for f in report.hidden_agenda_flags]
+    assert "Us vs Them" in agenda_techniques
+
+
+def test_hidden_agenda_whataboutism() -> None:
+    """Whataboutism is detected."""
+    text = "But what about when they did the same thing? How about their record?"
+    report = run_pipeline(text)
+    agenda_techniques = [f.technique for f in report.hidden_agenda_flags]
+    assert "Whataboutism" in agenda_techniques
+
+
+def test_hidden_agenda_shifting_goalpost() -> None:
+    """Shifting goalpost is detected."""
+    text = "This is not a bailout, it's support for certain industries."
+    report = run_pipeline(text)
+    agenda_techniques = [f.technique for f in report.hidden_agenda_flags]
+    assert "Shifting Goalpost" in agenda_techniques
+
+
+def test_hidden_agenda_side_note() -> None:
+    """Side note / diversion is detected."""
+    text = "The policy failed. Meanwhile, another company reported profits."
+    report = run_pipeline(text)
+    agenda_techniques = [f.technique for f in report.hidden_agenda_flags]
+    assert "Side Note" in agenda_techniques
+
+
+def test_hidden_agenda_speculation() -> None:
+    """Speculation (rumors, allegedly) is detected."""
+    text = "Rumors suggest he will resign. The minister allegedly knew."
+    report = run_pipeline(text)
+    agenda_techniques = [f.technique for f in report.hidden_agenda_flags]
+    assert "Speculation" in agenda_techniques
+
+
+def test_hidden_agenda_emotional_framing() -> None:
+    """Emotional sensationalism (fear language) is detected."""
+    report = run_pipeline(SAMPLE_TEXT)
+    agenda_techniques = [f.technique for f in report.hidden_agenda_flags]
+    assert "Emotional Sensationalism" in agenda_techniques

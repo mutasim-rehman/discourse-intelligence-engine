@@ -6,6 +6,7 @@ from discourse_engine.analyzers.tone import ToneAnalyzer
 from discourse_engine.analyzers.modal_pronoun import ModalPronounAnalyzer
 from discourse_engine.analyzers.logical_fallacy import LogicalFallacyAnalyzer
 from discourse_engine.analyzers.hidden_assumptions import HiddenAssumptionExtractor
+from discourse_engine.analyzers.hidden_agenda import HiddenAgendaAnalyzer
 from discourse_engine.models.report import Report
 from discourse_engine.models.config import Config
 
@@ -23,6 +24,7 @@ def run_pipeline(text: str, config: Config | None = None) -> Report:
     assumptions = HiddenAssumptionExtractor(
         api_key=config.llm_api_key, model=config.llm_model
     ).analyze(text)
+    agenda_flags = HiddenAgendaAnalyzer(lexicon_dir=config.lexicon_dir).analyze(text)
 
     return Report(
         word_count=stats[0],
@@ -34,6 +36,7 @@ def run_pipeline(text: str, config: Config | None = None) -> Report:
         pronoun_insight=modal_pronoun.pronoun_insight,
         logical_fallacy_flags=fallacies,
         hidden_assumptions=assumptions,
+        hidden_agenda_flags=agenda_flags,
     )
 
 
@@ -77,6 +80,13 @@ def format_report(report: Report) -> str:
     if report.hidden_assumptions:
         for a in report.hidden_assumptions:
             lines.append(f"- {a}")
+    else:
+        lines.append("- (none)")
+
+    lines.extend(["", "Hidden Agenda Flags:"])
+    if report.hidden_agenda_flags:
+        for f in report.hidden_agenda_flags:
+            lines.append(f"- {f.family} / {f.technique} ({f.pattern_hint})")
     else:
         lines.append("- (none)")
 

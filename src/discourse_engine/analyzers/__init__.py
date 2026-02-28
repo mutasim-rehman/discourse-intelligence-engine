@@ -7,6 +7,7 @@ from discourse_engine.analyzers.tone import ToneAnalyzer
 from discourse_engine.analyzers.modal_pronoun import ModalPronounAnalyzer
 from discourse_engine.analyzers.logical_fallacy import LogicalFallacyAnalyzer
 from discourse_engine.analyzers.hidden_assumptions import HiddenAssumptionExtractor
+from discourse_engine.analyzers.hidden_agenda import HiddenAgendaAnalyzer
 
 __all__ = [
     "Analyzer",
@@ -16,4 +17,5 @@ __all__ = [
     "ModalPronounAnalyzer",
     "LogicalFallacyAnalyzer",
     "HiddenAssumptionExtractor",
+    "HiddenAgendaAnalyzer",
 ]
