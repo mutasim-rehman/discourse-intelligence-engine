@@ -51,10 +51,18 @@ SIDE_NOTE_PATTERNS = (
 # ---------------------------------------------------------------------------
 
 # Us vs them: pronoun polarization (they/them vs we/us) with negative framing
+# Requires we/they CONTRAST in same sentence - not every "they" is polarization.
+# Excludes anaphoric "they" referring to abstract nouns (traditions, reforms, etc.)
 US_VS_THEM_PRONOUN_PATTERN = re.compile(
     r"\b(?:they|them|their)\s+(?:want|are|will|have|had)\s+",
     re.IGNORECASE,
 )
+IN_GROUP_PRONOUNS = frozenset({"we", "us", "our"})
+ABSTRACT_ANAPHOR_NOUNS = frozenset({
+    "traditions", "reforms", "policies", "developments", "institutions",
+    "changes", "systems", "ideas", "values", "norms", "practices",
+    "concepts", "principles", "standards", "procedures",
+})
 
 # Dehumanizing or poisoning language
 US_VS_THEM_HOSTILE = frozenset({
@@ -201,16 +209,23 @@ class HiddenAgendaAnalyzer:
                 ))
                 break
 
-        # Dividing
+        # Dividing: require we/they contrast; exclude anaphoric "they" for abstract nouns
         m = US_VS_THEM_PRONOUN_PATTERN.search(text)
         if m:
-            flags.append(AgendaFlag(
-                family="Dividing",
-                technique="Us vs Them",
-                pattern_hint="pronoun polarization ('they want', 'they are')",
-                sentence=_sentence_at(m),
-                confidence=0.72,
-            ))
+            sent = _sentence_at(m)
+            sent_lower = sent.lower()
+            sent_words = set(re.findall(r"\b\w+\b", sent_lower))
+            has_in_group = bool(sent_words & IN_GROUP_PRONOUNS)
+            has_abstract_antecedent = bool(sent_words & ABSTRACT_ANAPHOR_NOUNS)
+            # Only flag when we/they contrast in same sentence; suppress when "they" likely anaphoric to abstract noun
+            if has_in_group:
+                flags.append(AgendaFlag(
+                    family="Dividing",
+                    technique="Us vs Them",
+                    pattern_hint="pronoun polarization ('they want', 'they are') with we/us contrast",
+                    sentence=sent,
+                    confidence=0.72,
+                ))
 
         for w in US_VS_THEM_HOSTILE:
             if w in lower:

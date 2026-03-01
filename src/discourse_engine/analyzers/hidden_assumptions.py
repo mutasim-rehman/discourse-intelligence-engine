@@ -55,10 +55,28 @@ EPISTEMIC_SHORTCUTS = frozenset({
 })
 
 # Universal quantifiers: imply shared belief or blanket claim
+# NOTE: "none" removed from simple match - use NONE_OF_X_PATTERN instead
 UNIVERSAL_QUANTIFIERS = frozenset({
     "everyone", "everybody", "nobody", "no one", "always", "never",
-    "all", "none", "anyone", "anybody",
+    "all", "anyone", "anybody",
 })
+
+# "None of X are Y" - structurally meaningful universal negation over X
+# Exclude meta-framing: "presented as", "described as" (author clarifying scope, not asserting)
+NONE_OF_X_PATTERN = re.compile(
+    r"\bnone\s+of\s+(?:these|those|the)\s+\w+(?:\s+\w+)?\s+(?:are|is|were|was)\b",
+    re.IGNORECASE,
+)
+META_FRAMING_SUPPRESS = re.compile(
+    r"\b(?:presented|described|portrayed|characterized|framed)\s+as\b",
+    re.IGNORECASE,
+)
+
+# Meta-discussion: "The word 'X' is often used" - don't flag trigger X as assumption
+META_DISCUSSION_PATTERN = re.compile(
+    r"\b(?:the\s+)?(?:word|term|phrase)\s+['\"]?\w+['\"]?\s+(?:is|are|can be)",
+    re.IGNORECASE,
+)
 
 # Vague authority: invokes unspecified support
 VAGUE_AUTHORITY_PATTERNS = (
@@ -114,6 +132,12 @@ WITHOUT_X_Y = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+# Causal claims: X leads to/results in/causes Y - causation may be assumed, not proven
+CAUSAL_LEADS_TO = re.compile(
+    r"\b(\w+(?:\s+\w+){0,2})\s+(?:leads?\s+to|results?\s+in|causes?)\s+(\w+(?:\s+\w+){0,3})",
+    re.IGNORECASE,
+)
+
 
 def _get_words_lower(text: str) -> set[str]:
     """Return set of lowercased words in text."""
@@ -128,6 +152,30 @@ def _hedging_penalty(sentence: str) -> float:
     lower = sentence.lower()
     words = set(re.findall(r"\b\w+\b", lower))
     return 0.1 if (words & HEDGING_WORDS) else 0.0
+
+
+def _compute_density_factor(text: str) -> float:
+    """Return 0.95--1.05 multiplier: more rhetorical signals -> higher confidence."""
+    lower = text.lower()
+    signals = sum(1 for _ in re.finditer(r"\b(must|should|require|therefore|obviously|everyone|nobody)\b", lower))
+    word_count = max(1, len(text.split()))
+    # 1+ signal per 50 words -> small boost
+    density = signals / (word_count / 50)
+    if density >= 2:
+        return 1.05
+    if density >= 1:
+        return 1.02
+    if density < 0.3 and signals == 1:
+        return 0.97  # single trigger in long neutral text
+    return 1.0
+
+
+def _apply_suppressions(base_conf: float, sentence: str, density_factor: float) -> float:
+    """Apply meta-discussion suppression and density adjustment."""
+    conf = base_conf * density_factor
+    if META_DISCUSSION_PATTERN.search(sentence):
+        conf *= 0.5  # meta-discussion about a word, not use of it
+    return max(0.0, min(0.95, conf))
 
 
 @dataclass
@@ -203,9 +251,12 @@ def _check_epistemic_shortcuts(sentence: str) -> list[_AssumptionMatch]:
 
 
 def _check_universal_quantifiers(sentence: str) -> list[_AssumptionMatch]:
-    """Check for universal quantifiers implying blanket claims."""
+    """Check for universal quantifiers implying blanket claims.
+    Uses pattern-based 'None of X are Y' instead of bare 'none' keyword to reduce false positives.
+    Suppresses meta-framing (e.g. 'presented as') where author clarifies scope, not asserting."""
     matches: list[_AssumptionMatch] = []
     words = _get_words_lower(sentence)
+    lower = sentence.lower()
 
     base = 0.55 - _hedging_penalty(sentence)
     for w in UNIVERSAL_QUANTIFIERS:
@@ -214,7 +265,15 @@ def _check_universal_quantifiers(sentence: str) -> list[_AssumptionMatch]:
                 "Unstated universal claim: implies shared belief or blanket generalization",
                 w, sentence, base,
             ))
-            break
+            return matches
+
+    # Pattern-based: "None of X are Y" - only when substantive (not meta-framing)
+    if NONE_OF_X_PATTERN.search(sentence) and not META_FRAMING_SUPPRESS.search(sentence):
+        base = 0.62 - _hedging_penalty(sentence)
+        matches.append(_AssumptionMatch(
+            "Unstated universal claim: universal negation over set (None of X are Y)",
+            "none of X are Y", sentence, base,
+        ))
 
     return matches
 
@@ -332,6 +391,17 @@ def _check_structural_assumptions(
                 base,
             ))
 
+    # Causal claim: X leads to/results in/causes Y - causation assumed, not proven
+    m = CAUSAL_LEADS_TO.search(sentence)
+    if m:
+        base = 0.58 - _hedging_penalty(sentence)
+        matches.append(_AssumptionMatch(
+            "Causal claim: X -> Y asserted; causation may be assumed rather than proven",
+            f"{m.group(1).strip()} -> {m.group(2).strip()}",
+            sentence,
+            base,
+        ))
+
     return matches
 
 
@@ -389,14 +459,17 @@ class HiddenAssumptionExtractor:
                 )
             )
 
-        # Deduplicate by full description (keep first occurrence)
+        # Density factor: more rhetorical signals in text -> slightly higher confidence
+        density_factor = _compute_density_factor(text)
+
+        # Deduplicate by full description (keep first occurrence); apply suppressions
         seen: set[str] = set()
         result: list[AssumptionFlag] = []
         for m in all_matches:
             full = f"{m.description} [trigger: '{m.trigger}']" if m.trigger else m.description
             if full not in seen:
                 seen.add(full)
-                conf = max(0.0, min(0.95, m.confidence))
+                conf = _apply_suppressions(m.confidence, m.sentence, density_factor)
                 result.append(AssumptionFlag(description=full, sentence=m.sentence, confidence=conf))
 
         return result

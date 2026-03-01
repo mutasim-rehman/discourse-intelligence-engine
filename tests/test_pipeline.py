@@ -165,6 +165,23 @@ def test_hidden_assumptions_structural_necessity_modal() -> None:
     assert "structural" in assumption_text or "necessary" in assumption_text
 
 
+def test_hidden_assumptions_none_meta_framing_suppressed() -> None:
+    """'None of X are presented as Y' (meta-framing) should NOT be flagged as universal claim."""
+    text = "None of these developments are presented as malicious."
+    report = run_pipeline(text)
+    assumption_descs = [a.description.lower() for a in report.hidden_assumptions]
+    # Should not contain universal claim triggered by "none" in this context
+    assert not any("none" in d and "universal" in d for d in assumption_descs)
+
+
+def test_hidden_agenda_us_vs_them_anaphoric_suppressed() -> None:
+    """'They' referring to abstract noun (traditions) should NOT be flagged as Us vs Them."""
+    text = "Yet traditions are not merely relics of the past; they are repositories of collective wisdom."
+    report = run_pipeline(text)
+    agenda_techniques = [f.technique for f in report.hidden_agenda_flags]
+    assert "Us vs Them" not in agenda_techniques
+
+
 def test_hidden_assumptions_structural_without_x_y() -> None:
     """Structural: 'Without X, Y' -> X necessary for avoiding Y."""
     text = "Without reform, collapse is inevitable."
