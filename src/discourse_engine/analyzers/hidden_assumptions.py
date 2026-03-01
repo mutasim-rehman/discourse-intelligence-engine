@@ -85,13 +85,24 @@ def _get_words_lower(text: str) -> set[str]:
     return set(re.findall(r"\b[a-z]+\b", text.lower()))
 
 
+HEDGING_WORDS = frozenset({"perhaps", "maybe", "might", "could", "possibly", "sometimes", "allegedly"})
+
+
+def _hedging_penalty(sentence: str) -> float:
+    """Reduce confidence if sentence contains hedging (0 or 0.1)."""
+    lower = sentence.lower()
+    words = set(re.findall(r"\b\w+\b", lower))
+    return 0.1 if (words & HEDGING_WORDS) else 0.0
+
+
 @dataclass
 class _AssumptionMatch:
-    """Internal: a detected assumption with optional trigger and source sentence."""
+    """Internal: a detected assumption with trigger, sentence, and base confidence."""
 
     description: str
     trigger: str | None
     sentence: str
+    confidence: float
 
 
 def _check_presupposition_triggers(sentence: str) -> list[_AssumptionMatch]:
@@ -100,39 +111,39 @@ def _check_presupposition_triggers(sentence: str) -> list[_AssumptionMatch]:
     lower = sentence.lower()
     words = _get_words_lower(sentence)
 
+    base = 0.75 - _hedging_penalty(sentence)
     for w in FACTIVE_VERBS:
         if w in words or f"{w}s " in lower or f" {w} " in lower or f" {w}ed " in lower:
             matches.append(_AssumptionMatch(
                 "Presupposition: treats something as already established (factive verb)",
-                w,
-                sentence,
+                w, sentence, base,
             ))
             break
 
+    base = 0.65 - _hedging_penalty(sentence)
     for w in IMPLICATIVE_VERBS:
         if w in words:
             matches.append(_AssumptionMatch(
                 "Presupposition: implies unstated prior action or attempt (implicative verb)",
-                w,
-                sentence,
+                w, sentence, base,
             ))
             break
 
+    base = 0.68 - _hedging_penalty(sentence)
     for w in CHANGE_OF_STATE_VERBS:
         if w in words:
             matches.append(_AssumptionMatch(
                 "Presupposition: assumes a prior state (change-of-state verb)",
-                w,
-                sentence,
+                w, sentence, base,
             ))
             break
 
+    base = 0.70 - _hedging_penalty(sentence)
     for w in REPETITION_WORDS:
         if re.search(rf"\b{w}\b", lower):
             matches.append(_AssumptionMatch(
                 "Presupposition: implies prior occurrence (repetition/iteration)",
-                w,
-                sentence,
+                w, sentence, base,
             ))
             break
 
@@ -144,12 +155,12 @@ def _check_epistemic_shortcuts(sentence: str) -> list[_AssumptionMatch]:
     matches: list[_AssumptionMatch] = []
     lower = sentence.lower()
 
+    base = 0.80 - _hedging_penalty(sentence)
     for phrase in EPISTEMIC_SHORTCUTS:
         if phrase in lower:
             matches.append(_AssumptionMatch(
                 "Presents claim as obvious without justification (epistemic shortcut)",
-                phrase,
-                sentence,
+                phrase, sentence, base,
             ))
             break
 
@@ -161,12 +172,12 @@ def _check_universal_quantifiers(sentence: str) -> list[_AssumptionMatch]:
     matches: list[_AssumptionMatch] = []
     words = _get_words_lower(sentence)
 
+    base = 0.55 - _hedging_penalty(sentence)
     for w in UNIVERSAL_QUANTIFIERS:
         if w in words:
             matches.append(_AssumptionMatch(
                 "Unstated universal claim: implies shared belief or blanket generalization",
-                w,
-                sentence,
+                w, sentence, base,
             ))
             break
 
@@ -176,27 +187,29 @@ def _check_universal_quantifiers(sentence: str) -> list[_AssumptionMatch]:
 def _check_vague_authority(sentence: str) -> list[_AssumptionMatch]:
     """Check for vague authority without specification."""
     matches: list[_AssumptionMatch] = []
+    base = 0.65 - _hedging_penalty(sentence)
     for pat in VAGUE_AUTHORITY_PATTERNS:
         m = pat.search(sentence)
         if m:
             matches.append(_AssumptionMatch(
                 "Vague authority invoked without specification",
-                m.group(0)[:30],
-                sentence,
+                m.group(0)[:30], sentence, base,
             ))
             break
     return matches
 
 
 def _check_conclusion_markers(sentence: str) -> list[_AssumptionMatch]:
-    """Check for conclusion markers (enthymeme: conclusion without full premises)."""
+    """Check for conclusion markers (enthymeme). 'Therefore/thus' = higher conf than 'so'."""
     matches: list[_AssumptionMatch] = []
     m = CONCLUSION_MARKERS.search(sentence)
     if m:
+        marker = m.group(1).lower()
+        base = 0.70 if marker in ("therefore", "thus", "hence") else 0.55
+        base -= _hedging_penalty(sentence)
         matches.append(_AssumptionMatch(
             "Conclusion marker suggests inference without full stated premises (enthymeme)",
-            m.group(1),
-            sentence,
+            m.group(1), sentence, base,
         ))
     return matches
 
@@ -207,20 +220,20 @@ def _check_loaded_questions(sentence: str) -> list[_AssumptionMatch]:
     if "?" not in sentence:
         return matches
 
+    base = 0.85 - _hedging_penalty(sentence)
     for pat in LOADED_QUESTION_PATTERNS:
         if pat.search(sentence):
             matches.append(_AssumptionMatch(
                 "Loaded question: implies an assumption in the question itself",
-                None,
-                sentence,
+                None, sentence, base,
             ))
             return matches
 
+    base = 0.75 - _hedging_penalty(sentence)
     if SUGGESTIVE_QUESTION_PATTERN.search(sentence):
         matches.append(_AssumptionMatch(
             "Suggestive question: stacked alternatives implying negative traits",
-            None,
-            sentence,
+            None, sentence, base,
         ))
 
     return matches
@@ -267,6 +280,7 @@ class HiddenAssumptionExtractor:
             full = f"{m.description} [trigger: '{m.trigger}']" if m.trigger else m.description
             if full not in seen:
                 seen.add(full)
-                result.append(AssumptionFlag(description=full, sentence=m.sentence))
+                conf = max(0.0, min(0.95, m.confidence))
+                result.append(AssumptionFlag(description=full, sentence=m.sentence, confidence=conf))
 
         return result

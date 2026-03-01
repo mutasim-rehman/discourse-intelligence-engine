@@ -106,7 +106,8 @@ def format_report(report: Report) -> str:
     lines.extend(["", "Logical Fallacy Flags:"])
     if report.logical_fallacy_flags:
         for f in report.logical_fallacy_flags:
-            lines.append(f"- {f.name} ({f.pattern_hint})")
+            conf_str = f" [{f.confidence:.0%}]" if f.confidence > 0 else ""
+            lines.append(f"- {f.name}{conf_str} ({f.pattern_hint})")
             lines.append(f'  -> "{f.sentence}"')
     else:
         lines.append("- (none)")
@@ -114,7 +115,8 @@ def format_report(report: Report) -> str:
     lines.extend(["", "Hidden Assumptions:"])
     if report.hidden_assumptions:
         for a in report.hidden_assumptions:
-            lines.append(f"- {a.description}")
+            conf_str = f" [{a.confidence:.0%}]" if a.confidence > 0 else ""
+            lines.append(f"- {a.description}{conf_str}")
             lines.append(f'  -> "{a.sentence}"')
     else:
         lines.append("- (none)")
@@ -122,7 +124,8 @@ def format_report(report: Report) -> str:
     lines.extend(["", "Hidden Agenda Flags:"])
     if report.hidden_agenda_flags:
         for f in report.hidden_agenda_flags:
-            lines.append(f"- {f.family} / {f.technique} ({f.pattern_hint})")
+            conf_str = f" [{f.confidence:.0%}]" if f.confidence > 0 else ""
+            lines.append(f"- {f.family} / {f.technique}{conf_str} ({f.pattern_hint})")
             lines.append(f'  -> "{f.sentence}"')
     else:
         lines.append("- (none)")

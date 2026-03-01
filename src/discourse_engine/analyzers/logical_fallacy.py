@@ -79,7 +79,7 @@ class LogicalFallacyAnalyzer:
 
         m = FALSE_DILEMMA_PATTERN.search(text)
         if m and not _is_genuine_dichotomy(text):
-            flags.append(FallacyFlag("False Dilemma", "pattern: either X or Y", _sentence_at(m)))
+            flags.append(FallacyFlag("False Dilemma", "pattern: either X or Y", _sentence_at(m), confidence=0.80))
 
         if any(t in lower for t in FEAR_TERMS):
             fear_match = next(
@@ -87,13 +87,13 @@ class LogicalFallacyAnalyzer:
                 None,
             )
             sent = _sentence_at(fear_match) if fear_match else (sentences_with_offsets[0][0] if sentences_with_offsets else "")
-            flags.append(FallacyFlag("Appeal to Fear", "threat language", sent))
+            flags.append(FallacyFlag("Appeal to Fear", "threat language", sent, confidence=0.65))
 
         for pat in ATTACK_PATTERNS:
             m = pat.search(text)
             if m:
                 flags.append(
-                    FallacyFlag("Ad Hominem / Attack", "they want to [verb] pattern", _sentence_at(m))
+                    FallacyFlag("Ad Hominem / Attack", "they want to [verb] pattern", _sentence_at(m), confidence=0.75)
                 )
                 break
 

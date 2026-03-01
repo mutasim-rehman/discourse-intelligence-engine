@@ -144,6 +144,7 @@ class HiddenAgendaAnalyzer:
                     technique="Whataboutism",
                     pattern_hint="counter-accusation or deflection ('what about', 'how about')",
                     sentence=_sentence_at(m),
+                    confidence=0.82,
                 ))
                 break
 
@@ -155,6 +156,7 @@ class HiddenAgendaAnalyzer:
                     technique="Shifting Goalpost",
                     pattern_hint="relativizing by redefining ('this is not X, it's Y')",
                     sentence=_sentence_at(m),
+                    confidence=0.75,
                 ))
                 break
 
@@ -166,6 +168,7 @@ class HiddenAgendaAnalyzer:
                     technique="Side Note",
                     pattern_hint="diversion or tangential insertion ('Meanwhile', 'In other news')",
                     sentence=_sentence_at(m),
+                    confidence=0.72,
                 ))
                 break
 
@@ -177,6 +180,7 @@ class HiddenAgendaAnalyzer:
                 technique="Us vs Them",
                 pattern_hint="pronoun polarization ('they want', 'they are')",
                 sentence=_sentence_at(m),
+                confidence=0.72,
             ))
 
         for w in US_VS_THEM_HOSTILE:
@@ -186,6 +190,7 @@ class HiddenAgendaAnalyzer:
                     technique="Us vs Them",
                     pattern_hint="dehumanizing or hostile out-group language",
                     sentence=_sentence_for_term(w),
+                    confidence=0.78,
                 ))
                 break
 
@@ -197,6 +202,7 @@ class HiddenAgendaAnalyzer:
                     technique="Gatekeeping",
                     pattern_hint="defining who 'truly' belongs ('only real', 'true patriots')",
                     sentence=_sentence_at(m),
+                    confidence=0.70,
                 ))
                 break
 
@@ -209,6 +215,7 @@ class HiddenAgendaAnalyzer:
                     technique="Speculation",
                     pattern_hint="speculative or unconfirmed framing ('rumors', 'allegedly')",
                     sentence=_sentence_at(m),
+                    confidence=0.80,
                 ))
                 break
 
@@ -220,6 +227,7 @@ class HiddenAgendaAnalyzer:
                     technique="Vagueness",
                     pattern_hint="vague authority without specification",
                     sentence=_sentence_at(m),
+                    confidence=0.68,
                 ))
                 break
 
@@ -232,6 +240,7 @@ class HiddenAgendaAnalyzer:
                     technique="Mud & Honey",
                     pattern_hint="personal attack or derogatory framing",
                     sentence=_sentence_at(m),
+                    confidence=0.74,
                 ))
                 break
 
@@ -244,6 +253,7 @@ class HiddenAgendaAnalyzer:
                     technique="Emotional Sensationalism",
                     pattern_hint="fear or threat language",
                     sentence=_sentence_for_term(t),
+                    confidence=0.62,
                 ))
                 break
 

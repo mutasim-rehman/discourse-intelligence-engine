@@ -14,29 +14,32 @@ class TriggerProfile:
 
 @dataclass
 class FallacyFlag:
-    """A detected logical fallacy with its pattern hint and source sentence."""
+    """A detected logical fallacy with pattern hint, source sentence, and confidence."""
 
     name: str
     pattern_hint: str
     sentence: str
+    confidence: float = 0.0  # 0-1, how sure we are this is a genuine instance
 
 
 @dataclass
 class AgendaFlag:
-    """A detected hidden agenda technique with its pattern hint and source sentence."""
+    """A detected hidden agenda technique with pattern hint, source sentence, and confidence."""
 
     family: str
     technique: str
     pattern_hint: str
     sentence: str
+    confidence: float = 0.0  # 0-1
 
 
 @dataclass
 class AssumptionFlag:
-    """A detected hidden assumption with its description and source sentence."""
+    """A detected hidden assumption with description, source sentence, and confidence."""
 
     description: str
     sentence: str
+    confidence: float = 0.0  # 0-1
 
 
 @dataclass
