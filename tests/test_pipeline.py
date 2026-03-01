@@ -185,11 +185,11 @@ def test_hidden_assumptions_none_meta_framing_suppressed() -> None:
 
 
 def test_hidden_agenda_us_vs_them_anaphoric_suppressed() -> None:
-    """'They' referring to abstract noun (traditions) should NOT be flagged as Us vs Them."""
+    """'They' referring to abstract noun (traditions) should NOT be flagged as Pronoun contrast."""
     text = "Yet traditions are not merely relics of the past; they are repositories of collective wisdom."
     report = run_pipeline(text)
     agenda_techniques = [f.technique for f in report.hidden_agenda_flags]
-    assert "Us vs Them" not in agenda_techniques
+    assert "Pronoun contrast" not in agenda_techniques
 
 
 def test_hidden_assumptions_structural_without_x_y() -> None:
@@ -212,63 +212,63 @@ def test_hidden_assumptions_sample_text_detects_some() -> None:
 
 
 def test_hidden_agenda_us_vs_them() -> None:
-    """Us vs them (they want, hostile language) is detected."""
+    """Pronoun contrast (they want, hostile language) is detected."""
     report = run_pipeline(SAMPLE_TEXT)
     agenda_techniques = [f.technique for f in report.hidden_agenda_flags]
-    assert "Us vs Them" in agenda_techniques
+    assert "Pronoun contrast" in agenda_techniques or "Hostile out-group language" in agenda_techniques
 
 
 def test_hidden_agenda_whataboutism() -> None:
-    """Whataboutism is detected."""
+    """Counter-accusation deflection is detected."""
     text = "But what about when they did the same thing? How about their record?"
     report = run_pipeline(text)
     agenda_techniques = [f.technique for f in report.hidden_agenda_flags]
-    assert "Whataboutism" in agenda_techniques
+    assert "Counter-accusation" in agenda_techniques
 
 
 def test_hidden_agenda_shifting_goalpost() -> None:
-    """Shifting goalpost is detected."""
+    """Scope redefinition is detected."""
     text = "This is not a bailout, it's support for certain industries."
     report = run_pipeline(text)
     agenda_techniques = [f.technique for f in report.hidden_agenda_flags]
-    assert "Shifting Goalpost" in agenda_techniques
+    assert "Scope redefinition" in agenda_techniques
 
 
 def test_hidden_agenda_side_note() -> None:
-    """Side note / diversion is detected."""
+    """Topic diversion is detected."""
     text = "The policy failed. Meanwhile, another company reported profits."
     report = run_pipeline(text)
     agenda_techniques = [f.technique for f in report.hidden_agenda_flags]
-    assert "Side Note" in agenda_techniques
+    assert "Topic diversion" in agenda_techniques
 
 
 def test_hidden_agenda_speculation() -> None:
-    """Speculation (rumors, allegedly) is detected."""
+    """Speculative framing (rumors, allegedly) is detected."""
     text = "Rumors suggest he will resign. The minister allegedly knew."
     report = run_pipeline(text)
     agenda_techniques = [f.technique for f in report.hidden_agenda_flags]
-    assert "Speculation" in agenda_techniques
+    assert "Speculative framing" in agenda_techniques
 
 
 def test_hidden_agenda_policy_advocacy() -> None:
-    """Policy advocacy (verb + value term) is detected."""
+    """Normative directive (policy verb + value term) is detected."""
     text = "Expanding private-sector partnerships will encourage innovation and efficiency."
     report = run_pipeline(text)
     agenda_families = [f.family for f in report.hidden_agenda_flags]
     techniques = [f.technique for f in report.hidden_agenda_flags]
-    assert "Advocating" in agenda_families or "Directional push" in techniques
+    assert "Normative directive" in agenda_families or "Prescriptive framing" in techniques
 
 
 def test_hidden_agenda_descriptive_not_flagged() -> None:
-    """Descriptive meta-analysis (divides, often) should NOT be flagged as Directional push."""
+    """Descriptive meta-analysis (divides, often) should NOT be flagged as Prescriptive framing."""
     text = "Public debate often divides participants into progress-oriented reformers and tradition-oriented conservatives, yet this binary framing oversimplifies discussions."
     report = run_pipeline(text)
     agenda_techniques = [f.technique for f in report.hidden_agenda_flags]
-    assert "Directional push" not in agenda_techniques
+    assert "Prescriptive framing" not in agenda_techniques
 
 
 def test_hidden_agenda_emotional_framing() -> None:
-    """Emotional sensationalism (fear language) is detected."""
+    """Fear/threat framing is detected."""
     report = run_pipeline(SAMPLE_TEXT)
     agenda_techniques = [f.technique for f in report.hidden_agenda_flags]
-    assert "Emotional Sensationalism" in agenda_techniques
+    assert "Fear/threat framing" in agenda_techniques

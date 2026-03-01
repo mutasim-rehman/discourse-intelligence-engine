@@ -172,13 +172,13 @@ class HiddenAgendaAnalyzer:
             m = re.search(rf"\b{re.escape(term)}\b", text, re.IGNORECASE)
             return _sentence_at(m) if m else (sentences_with_offsets[0][0] if sentences_with_offsets else "")
 
-        # Deflecting
+        # Topic deflection (neutral terminology)
         for pat in WHATABOUTISM_PATTERNS:
             m = pat.search(text)
             if m:
                 flags.append(AgendaFlag(
-                    family="Deflecting",
-                    technique="Whataboutism",
+                    family="Topic deflection",
+                    technique="Counter-accusation",
                     pattern_hint="counter-accusation or deflection ('what about', 'how about')",
                     sentence=_sentence_at(m),
                     confidence=0.82,
@@ -189,8 +189,8 @@ class HiddenAgendaAnalyzer:
             m = pat.search(text)
             if m:
                 flags.append(AgendaFlag(
-                    family="Deflecting",
-                    technique="Shifting Goalpost",
+                    family="Topic deflection",
+                    technique="Scope redefinition",
                     pattern_hint="relativizing by redefining ('this is not X, it's Y')",
                     sentence=_sentence_at(m),
                     confidence=0.75,
@@ -201,27 +201,25 @@ class HiddenAgendaAnalyzer:
             m = pat.search(text)
             if m:
                 flags.append(AgendaFlag(
-                    family="Deflecting",
-                    technique="Side Note",
+                    family="Topic deflection",
+                    technique="Topic diversion",
                     pattern_hint="diversion or tangential insertion ('Meanwhile', 'In other news')",
                     sentence=_sentence_at(m),
                     confidence=0.72,
                 ))
                 break
 
-        # Dividing: require we/they contrast; exclude anaphoric "they" for abstract nouns
+        # In-group/out-group framing (neutral terminology)
         m = US_VS_THEM_PRONOUN_PATTERN.search(text)
         if m:
             sent = _sentence_at(m)
             sent_lower = sent.lower()
             sent_words = set(re.findall(r"\b\w+\b", sent_lower))
             has_in_group = bool(sent_words & IN_GROUP_PRONOUNS)
-            has_abstract_antecedent = bool(sent_words & ABSTRACT_ANAPHOR_NOUNS)
-            # Only flag when we/they contrast in same sentence; suppress when "they" likely anaphoric to abstract noun
             if has_in_group:
                 flags.append(AgendaFlag(
-                    family="Dividing",
-                    technique="Us vs Them",
+                    family="In-group/out-group framing",
+                    technique="Pronoun contrast",
                     pattern_hint="pronoun polarization ('they want', 'they are') with we/us contrast",
                     sentence=sent,
                     confidence=0.72,
@@ -230,8 +228,8 @@ class HiddenAgendaAnalyzer:
         for w in US_VS_THEM_HOSTILE:
             if w in lower:
                 flags.append(AgendaFlag(
-                    family="Dividing",
-                    technique="Us vs Them",
+                    family="In-group/out-group framing",
+                    technique="Hostile out-group language",
                     pattern_hint="dehumanizing or hostile out-group language",
                     sentence=_sentence_for_term(w),
                     confidence=0.78,
@@ -242,21 +240,21 @@ class HiddenAgendaAnalyzer:
             m = pat.search(text)
             if m:
                 flags.append(AgendaFlag(
-                    family="Dividing",
-                    technique="Gatekeeping",
+                    family="In-group/out-group framing",
+                    technique="Boundary definition",
                     pattern_hint="defining who 'truly' belongs ('only real', 'true patriots')",
                     sentence=_sentence_at(m),
                     confidence=0.70,
                 ))
                 break
 
-        # Asserting
+        # Unsupported claim
         for pat in SPECULATION_PATTERNS:
             m = pat.search(text)
             if m:
                 flags.append(AgendaFlag(
-                    family="Asserting",
-                    technique="Speculation",
+                    family="Unsupported claim",
+                    technique="Speculative framing",
                     pattern_hint="speculative or unconfirmed framing ('rumors', 'allegedly')",
                     sentence=_sentence_at(m),
                     confidence=0.80,
@@ -267,34 +265,34 @@ class HiddenAgendaAnalyzer:
             m = pat.search(text)
             if m:
                 flags.append(AgendaFlag(
-                    family="Asserting",
-                    technique="Vagueness",
+                    family="Unsupported claim",
+                    technique="Vague authority",
                     pattern_hint="vague authority without specification",
                     sentence=_sentence_at(m),
                     confidence=0.68,
                 ))
                 break
 
-        # Personalizing
+        # Personal attack
         for pat in MUD_HONEY_PATTERNS:
             m = pat.search(text)
             if m:
                 flags.append(AgendaFlag(
-                    family="Personalizing",
-                    technique="Mud & Honey",
+                    family="Personal attack",
+                    technique="Derogatory framing",
                     pattern_hint="personal attack or derogatory framing",
                     sentence=_sentence_at(m),
                     confidence=0.74,
                 ))
                 break
 
-        # Framing (emotional sensationalism)
+        # Emotional intensity
         fear_lower = [t.lower() for t in self._fear_terms]
         for t in fear_lower:
             if t in lower:
                 flags.append(AgendaFlag(
-                    family="Framing",
-                    technique="Emotional Sensationalism",
+                    family="Emotional intensity",
+                    technique="Fear/threat framing",
                     pattern_hint="fear or threat language",
                     sentence=_sentence_for_term(t),
                     confidence=0.62,
@@ -333,15 +331,15 @@ class HiddenAgendaAnalyzer:
             # Only flag when prescriptive; suppress when descriptive meta-analysis
             if has_policy and has_value and is_prescriptive and not is_descriptive:
                 flags.append(AgendaFlag(
-                    family="Advocating",
-                    technique="Directional push",
+                    family="Normative directive",
+                    technique="Prescriptive framing",
                     pattern_hint="policy advocacy verb + value term (prescriptive)",
                     sentence=sent,
                     confidence=0.72,
                 ))
                 break
 
-        # Advocating (Layer 2): rhetorical flow Problem -> Solution -> Justification
+        # Normative directive: rhetorical flow Problem -> Solution -> Justification
         problem_idxs: list[int] = []
         solution_idxs: list[int] = []
         justification_idxs: list[int] = []
@@ -361,8 +359,8 @@ class HiddenAgendaAnalyzer:
                     for ji in justification_idxs:
                         if ji > si and ji - si <= 2:
                             flags.append(AgendaFlag(
-                                family="Advocating",
-                                technique="Problem-Solution Framing",
+                                family="Normative directive",
+                                technique="Problem-solution structure",
                                 pattern_hint="triadic structure: problem -> solution -> justification",
                                 sentence=sentences[si],
                                 confidence=0.68,

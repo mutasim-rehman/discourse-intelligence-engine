@@ -179,6 +179,49 @@ Features not yet implemented and planned enhancements for the Discourse Intellig
 
 ---
 
+## Accuracy Improvements Requiring New Dependencies
+
+The following accuracy improvements were identified but require new dependencies or infrastructure:
+
+### Step 1 — Dependency Parsing & Clause Detection
+
+**Status:** Not implemented (requires spaCy or Stanza)
+
+**Planned:** Use dependency parsing and semantic role labeling to:
+- Identify main vs. subordinate clauses for more precise presupposition attribution
+- Improve causal extraction ("X causes Y") by parsing argument structure
+- Reduce false positives in structural patterns via syntactic validation
+
+**Requirements:** `spacy` or `stanza` with English models
+
+---
+
+### Step 2 — Gold Standard Dataset
+
+**Status:** Not implemented
+
+**Planned:** Create a curated dataset of 50–100 annotated paragraphs to:
+- Benchmark precision, recall, and F1 per analyzer
+- Tune confidence thresholds and scoring weights
+- Enable regression testing on representative examples
+
+**Requirements:** Manual annotation effort; optional storage format (JSON/JSONL)
+
+---
+
+### Step 6 — NLI for Entailment/Contradiction Checks
+
+**Status:** Not implemented (requires NLI model)
+
+**Planned:** Use Natural Language Inference (e.g. RoBERTa-MNLI, DeBERTa) to:
+- Validate whether stated premises entail the conclusion (enthymeme detection)
+- Flag contradictions between sentences
+- Reduce false positives when inference is explicitly supported
+
+**Requirements:** `transformers`, `torch` (or similar); GPU optional for speed
+
+---
+
 ## Summary Table
 
 | Feature | Effort | Impact | Priority |

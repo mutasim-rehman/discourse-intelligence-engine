@@ -78,6 +78,13 @@ META_DISCUSSION_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Reporting verbs (Step 7): sentence describes/analyzes discourse, not author's claim
+REPORTING_VERBS = frozenset({
+    "argues", "argued", "claims", "claimed", "states", "stated", "describes",
+    "described", "suggests", "suggested", "notes", "noted", "observes",
+    "observed", "reports", "reported", "according to", "as X said",
+})
+
 # Vague authority: invokes unspecified support
 VAGUE_AUTHORITY_PATTERNS = (
     re.compile(r"\bexperts?\b", re.IGNORECASE),
@@ -180,12 +187,13 @@ def _apply_suppressions(base_conf: float, sentence: str, density_factor: float) 
 
 @dataclass
 class _AssumptionMatch:
-    """Internal: a detected assumption with trigger, sentence, and base confidence."""
+    """Internal: Layer A structural detection with type for calibrated scoring."""
 
     description: str
     trigger: str | None
     sentence: str
-    confidence: float
+    detection_type: str  # For calibrated scoring
+    raw_confidence: float  # Legacy; superseded by calibrated score
 
 
 def _check_presupposition_triggers(sentence: str) -> list[_AssumptionMatch]:
@@ -199,7 +207,7 @@ def _check_presupposition_triggers(sentence: str) -> list[_AssumptionMatch]:
         if w in words or f"{w}s " in lower or f" {w} " in lower or f" {w}ed " in lower:
             matches.append(_AssumptionMatch(
                 "Presupposition: treats something as already established (factive verb)",
-                w, sentence, base,
+                w, sentence, "factive", base,
             ))
             break
 
@@ -208,7 +216,7 @@ def _check_presupposition_triggers(sentence: str) -> list[_AssumptionMatch]:
         if w in words:
             matches.append(_AssumptionMatch(
                 "Presupposition: implies unstated prior action or attempt (implicative verb)",
-                w, sentence, base,
+                w, sentence, "implicative", base,
             ))
             break
 
@@ -217,7 +225,7 @@ def _check_presupposition_triggers(sentence: str) -> list[_AssumptionMatch]:
         if w in words:
             matches.append(_AssumptionMatch(
                 "Presupposition: assumes a prior state (change-of-state verb)",
-                w, sentence, base,
+                w, sentence, "change_of_state", base,
             ))
             break
 
@@ -226,7 +234,7 @@ def _check_presupposition_triggers(sentence: str) -> list[_AssumptionMatch]:
         if re.search(rf"\b{w}\b", lower):
             matches.append(_AssumptionMatch(
                 "Presupposition: implies prior occurrence (repetition/iteration)",
-                w, sentence, base,
+                w, sentence, "repetition", base,
             ))
             break
 
@@ -243,7 +251,7 @@ def _check_epistemic_shortcuts(sentence: str) -> list[_AssumptionMatch]:
         if phrase in lower:
             matches.append(_AssumptionMatch(
                 "Presents claim as obvious without justification (epistemic shortcut)",
-                phrase, sentence, base,
+                phrase, sentence, "epistemic_shortcut", base,
             ))
             break
 
@@ -263,7 +271,7 @@ def _check_universal_quantifiers(sentence: str) -> list[_AssumptionMatch]:
         if w in words:
             matches.append(_AssumptionMatch(
                 "Unstated universal claim: implies shared belief or blanket generalization",
-                w, sentence, base,
+                w, sentence, "universal", base,
             ))
             return matches
 
@@ -272,7 +280,7 @@ def _check_universal_quantifiers(sentence: str) -> list[_AssumptionMatch]:
         base = 0.62 - _hedging_penalty(sentence)
         matches.append(_AssumptionMatch(
             "Unstated universal claim: universal negation over set (None of X are Y)",
-            "none of X are Y", sentence, base,
+            "none of X are Y", sentence, "universal", base,
         ))
 
     return matches
@@ -287,7 +295,7 @@ def _check_vague_authority(sentence: str) -> list[_AssumptionMatch]:
         if m:
             matches.append(_AssumptionMatch(
                 "Vague authority invoked without specification",
-                m.group(0)[:30], sentence, base,
+                m.group(0)[:30], sentence, "vague_authority", base,
             ))
             break
     return matches
@@ -303,7 +311,7 @@ def _check_conclusion_markers(sentence: str) -> list[_AssumptionMatch]:
         base -= _hedging_penalty(sentence)
         matches.append(_AssumptionMatch(
             "Conclusion marker suggests inference without full stated premises (enthymeme)",
-            m.group(1), sentence, base,
+            m.group(1), sentence, "conclusion_marker", base,
         ))
     return matches
 
@@ -319,7 +327,7 @@ def _check_loaded_questions(sentence: str) -> list[_AssumptionMatch]:
         if pat.search(sentence):
             matches.append(_AssumptionMatch(
                 "Loaded question: implies an assumption in the question itself",
-                None, sentence, base,
+                None, sentence, "loaded_question", base,
             ))
             return matches
 
@@ -327,7 +335,7 @@ def _check_loaded_questions(sentence: str) -> list[_AssumptionMatch]:
     if SUGGESTIVE_QUESTION_PATTERN.search(sentence):
         matches.append(_AssumptionMatch(
             "Suggestive question: stacked alternatives implying negative traits",
-            None, sentence, base,
+            None, sentence, "loaded_question", base,
         ))
 
     return matches
@@ -351,6 +359,7 @@ def _check_structural_assumptions(
             "Structural: Action is necessary for Outcome (necessity modal + outcome)",
             f"'{m.group(2)}' for '{m.group(3)}'",
             sentence,
+            "necessity_modal_outcome",
             base,
         ))
 
@@ -361,6 +370,7 @@ def _check_structural_assumptions(
             "Structural: Condition implies necessity of consequence",
             "if/when ... must/need to/should",
             sentence,
+            "necessity_modal_outcome",
             base,
         ))
 
@@ -372,6 +382,7 @@ def _check_structural_assumptions(
             "Structural: X is necessary for avoiding Y",
             f"{m.group(1).strip()} -> {m.group(2)}",
             sentence,
+            "without_x_y",
             base,
         ))
 
@@ -388,6 +399,7 @@ def _check_structural_assumptions(
                 "Structural: Outcome is desirable/necessary (value-loaded framing)",
                 "value outcome + necessity modal",
                 sentence,
+                "value_loaded",
                 base,
             ))
 
@@ -399,6 +411,7 @@ def _check_structural_assumptions(
             "Causal claim: X -> Y asserted; causation may be assumed rather than proven",
             f"{m.group(1).strip()} -> {m.group(2).strip()}",
             sentence,
+            "causal",
             base,
         ))
 
@@ -459,35 +472,88 @@ class HiddenAssumptionExtractor:
                 )
             )
 
-        # Density factor: more rhetorical signals in text -> slightly higher confidence
-        density_factor = _compute_density_factor(text)
+        # Step 5: Expanded evidence/justification markers for context validation
+        # Exclude "support" (ambiguous: "evidence supports" vs "why do you still support")
 
-        # Assumption validation: reduce confidence when no justification nearby
-        justification_words = frozenset({
-            "because", "since", "evidence", "data", "study", "studies", "research",
-            "shows", "indicates", "demonstrates", "proves", "support", "supporting",
-        })
-
-        def _has_justification_nearby(sent: str, sent_list: list[str]) -> bool:
+        def _has_justification_nearby(
+            sent: str, sent_list: list[str], detection_type: str = ""
+        ) -> bool:
             idx = next((i for i, s in enumerate(sent_list) if s == sent), -1)
             if idx < 0:
                 return False
-            context = " ".join(
-                sent_list[max(0, idx - 1) : min(len(sent_list), idx + 2)]
-            ).lower()
+            # Check sentence + 2 before + 2 after (Step 5: local context)
+            start = max(0, idx - 2)
+            end = min(len(sent_list), idx + 3)
+            context = " ".join(sent_list[start:end]).lower()
+            # Phrase-based first (e.g. "evidence shows")
+            for phrase in ("evidence shows", "evidence indicates", "evidence demonstrates"):
+                if phrase in context:
+                    return True
             words = set(re.findall(r"\b\w+\b", context))
-            return bool(words & justification_words)
+            # For vague_authority, exclude "study/studies/shows" (often part of the pattern)
+            base_words = frozenset({
+                "because", "since", "data", "research", "supporting",
+                "citation", "cited", "findings", "results", "empirical",
+            })
+            if detection_type != "vague_authority":
+                base_words = base_words | {"study", "studies", "shows", "indicates", "demonstrates", "proves"}
+            return bool(words & base_words)
 
-        # Deduplicate by full description (keep first occurrence); apply suppressions
+        def _premises_provided_earlier(sent: str, sent_list: list[str]) -> bool:
+            """Layer B: For conclusion markers, check if premises exist in earlier sentences."""
+            idx = next((i for i, s in enumerate(sent_list) if s == sent), -1)
+            if idx < 1:
+                return False
+            earlier = " ".join(sent_list[:idx]).lower()
+            # Strong premise indicators: explicit reasoning, not vague "evidence" alone
+            if "because" in earlier or "since" in earlier or "given that" in earlier:
+                return True
+            if "evidence shows" in earlier or "evidence indicates" in earlier or "data show" in earlier:
+                return True
+            premise_words = {"data", "study", "shows", "indicates", "demonstrates"}
+            words = set(re.findall(r"\b\w+\b", earlier))
+            return bool(words & premise_words)
+
+        def _is_meta_language(sent: str) -> bool:
+            """Step 7: Sentence reports/describes discourse rather than asserting."""
+            lower = sent.lower()
+            return any(rv in lower for rv in REPORTING_VERBS)
+
+        from discourse_engine.scoring import (
+            assumption_score,
+            modal_strength_from_type,
+            absence_of_support,
+        )
+
+        # Deduplicate; apply Layer B, calibrated scoring, meta-language, precision threshold
         seen: set[str] = set()
         result: list[AssumptionFlag] = []
+        CONFIDENCE_FLOOR = 0.60  # Step 8: Precision > recall; only flag when confident
+
         for m in all_matches:
             full = f"{m.description} [trigger: '{m.trigger}']" if m.trigger else m.description
             if full not in seen:
                 seen.add(full)
-                conf = _apply_suppressions(m.confidence, m.sentence, density_factor)
-                if not _has_justification_nearby(m.sentence, sentences):
-                    conf *= 0.95  # Slightly reduce when assumption appears unsupported
-                result.append(AssumptionFlag(description=full, sentence=m.sentence, confidence=conf))
+                # Layer B: enthymeme — if premises provided, suppress
+                if m.detection_type == "conclusion_marker" and _premises_provided_earlier(m.sentence, sentences):
+                    continue
+                has_support = _has_justification_nearby(m.sentence, sentences, m.detection_type)
+                # Step 4: Calibrated scoring
+                modal = modal_strength_from_type(m.detection_type)
+                causal = 0.7 if m.detection_type == "causal" else 0.3
+                absent = absence_of_support(has_support)
+                normative = 0.6 if (
+                    "value" in m.description.lower()
+                    or "necessity" in m.description.lower()
+                    or "necessary" in m.description.lower()
+                ) else 0.3
+                conf = assumption_score(modal, causal, absent, normative)
+                # Suppressions
+                conf = _apply_suppressions(conf, m.sentence, _compute_density_factor(text))
+                if _is_meta_language(m.sentence):
+                    conf *= 0.5  # Step 7: meta-language
+                conf = max(0.0, min(0.95, conf))
+                if conf >= CONFIDENCE_FLOOR:
+                    result.append(AssumptionFlag(description=full, sentence=m.sentence, confidence=conf))
 
         return result
