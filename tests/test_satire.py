@@ -54,3 +54,26 @@ def test_self_undermining_contradiction() -> None:
     prob, signals, _ = SatireAnalyzer().analyze(text)
     assert prob >= 0.3
     assert any(s.name == "Incongruity" for s in signals)
+
+
+def test_implausible_policy_satire() -> None:
+    """Implausible policy (weekly emotional approval ratings) raises satire probability."""
+    text = (
+        "To protect democracy, we will require every citizen to submit weekly "
+        "emotional approval ratings for government decisions. Failure to score above "
+        "80% satisfaction will result in mandatory optimism training."
+    )
+    prob, signals, content_type = SatireAnalyzer().analyze(text)
+    assert prob >= 0.3
+    assert any(s.name == "Absurdity" for s in signals) or prob >= 0.25
+
+
+def test_value_clash_satire() -> None:
+    """Value clash (claim freedom, propose mandatory alignment) raises incongruity."""
+    text = (
+        "True freedom means aligning personal feelings with national progress. "
+        "We require every citizen to attend gratitude seminars. "
+        "Disagreement only slows development."
+    )
+    prob, signals, _ = SatireAnalyzer().analyze(text)
+    assert prob >= 0.25

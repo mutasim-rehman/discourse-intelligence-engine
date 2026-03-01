@@ -7,6 +7,7 @@ from pathlib import Path
 from discourse_engine.models.report import AgendaFlag
 from discourse_engine.utils.text_utils import (
     sentence_containing_offset,
+    split_sentences,
     split_sentences_with_offsets,
 )
 
@@ -106,6 +107,32 @@ DEFAULT_FEAR_TERMS = frozenset({
     "terror", "disaster", "attack",
 })
 
+# ---------------------------------------------------------------------------
+# Advocating: policy advocacy, rhetorical flow (Layer 2)
+# ---------------------------------------------------------------------------
+
+# Problem markers: risk, failure, crisis, without X, fails to
+PROBLEM_PATTERNS = (
+    re.compile(r"\b(?:risk|risks|fails?\s+to|failure|failing)\b", re.IGNORECASE),
+    re.compile(r"\bwithout\s+\w+", re.IGNORECASE),
+    re.compile(r"\b(?:disconnect|disconnected|stagnat|inevitable)\b", re.IGNORECASE),
+)
+
+# Justification markers: because, in order to, allows, enables
+JUSTIFICATION_PATTERNS = (
+    re.compile(r"\bbecause\b", re.IGNORECASE),
+    re.compile(r"\bin\s+order\s+to\b", re.IGNORECASE),
+    re.compile(r"\b(?:allows|enables|will\s+encourage|can\s+restructure)\b", re.IGNORECASE),
+)
+
+DEFAULT_POLICY_VERBS = [
+    "expand", "restructure", "eliminate", "adopt", "reform", "privatize",
+    "deregulate", "subsidize", "mandate", "incentivize",
+]
+DEFAULT_VALUE_TERMS = [
+    "innovation", "efficiency", "stability", "integrity", "freedom", "progress", "reform",
+]
+
 
 class HiddenAgendaAnalyzer:
     """
@@ -118,6 +145,8 @@ class HiddenAgendaAnalyzer:
             lexicon_dir = Path(__file__).parent.parent / "lexicons"
         self.lexicon_dir = Path(lexicon_dir)
         self._fear_terms = _load_lexicon(self.lexicon_dir, "fear_terms") or list(DEFAULT_FEAR_TERMS)
+        self._policy_verbs = _load_lexicon(self.lexicon_dir, "policy_advocacy_verbs") or DEFAULT_POLICY_VERBS
+        self._value_terms = _load_lexicon(self.lexicon_dir, "value_terms") or DEFAULT_VALUE_TERMS
 
     def analyze(self, text: str) -> list[AgendaFlag]:
         """Return list of AgendaFlag for detected agenda techniques."""
@@ -256,6 +285,66 @@ class HiddenAgendaAnalyzer:
                     confidence=0.62,
                 ))
                 break
+
+        # Advocating (Layer 2): policy advocacy verbs + value terms
+        sentences = split_sentences(text)
+        policy_set = {v.lower() for v in self._policy_verbs}
+        value_set = {v.lower() for v in self._value_terms}
+
+        def _has_policy_verb(s: str) -> bool:
+            s_lower = s.lower()
+            return any(pv in s_lower for pv in policy_set)
+
+        def _has_value_term(s: str) -> bool:
+            words = set(re.findall(r"\b\w+\b", s.lower()))
+            return bool(words & value_set)
+
+        for sent in sentences:
+            has_policy = _has_policy_verb(sent)
+            has_value = _has_value_term(sent)
+            if has_policy and has_value:
+                flags.append(AgendaFlag(
+                    family="Advocating",
+                    technique="Directional push",
+                    pattern_hint="policy advocacy verb + value term (innovation, efficiency, etc.)",
+                    sentence=sent,
+                    confidence=0.72,
+                ))
+                break
+
+        # Advocating (Layer 2): rhetorical flow Problem -> Solution -> Justification
+        problem_idxs: list[int] = []
+        solution_idxs: list[int] = []
+        justification_idxs: list[int] = []
+
+        for i, sent in enumerate(sentences):
+            if any(pat.search(sent) for pat in PROBLEM_PATTERNS):
+                problem_idxs.append(i)
+            if _has_policy_verb(sent):
+                solution_idxs.append(i)
+            if any(pat.search(sent) for pat in JUSTIFICATION_PATTERNS):
+                justification_idxs.append(i)
+
+        # Triadic structure: problem before solution before justification (within 2-sentence gap)
+        for pi in problem_idxs:
+            for si in solution_idxs:
+                if si > pi and si - pi <= 2:
+                    for ji in justification_idxs:
+                        if ji > si and ji - si <= 2:
+                            flags.append(AgendaFlag(
+                                family="Advocating",
+                                technique="Problem-Solution Framing",
+                                pattern_hint="triadic structure: problem -> solution -> justification",
+                                sentence=sentences[si],
+                                confidence=0.68,
+                            ))
+                            break
+                    else:
+                        continue
+                    break
+            else:
+                continue
+            break
 
         # Deduplicate by (family, technique)
         seen: set[tuple[str, str]] = set()

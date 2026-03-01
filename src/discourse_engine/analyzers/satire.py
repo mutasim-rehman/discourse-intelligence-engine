@@ -10,8 +10,19 @@ Satire requires SEMANTIC ABSURDITY (impossible outcomes) and/or
 self-undermining incongruity - not just emotional intensity.
 """
 
+import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
+
+
+def _load_lexicon(lexicon_dir: Path, name: str) -> list:
+    """Load a JSON lexicon file (list or dict)."""
+    path = lexicon_dir / f"{name}.json"
+    if not path.exists():
+        return []
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
 
 
 @dataclass
@@ -62,6 +73,33 @@ CONTRADICTION_MARKERS = (
     r"\bthe\s+best\s+plan\s+that\s+ignores\b",
 )
 
+# === Policy plausibility ontology (Layer 2) ===
+# Implausible policies: enforceable emotions, mandatory feelings
+DEFAULT_IMPLAUSIBLE_POLICY_PATTERNS = [
+    r"emotional\s+approval\s+ratings",
+    r"gratitude\s+seminars",
+    r"mandatory\s+optimism",
+    r"weekly\s+emotional\s+rating",
+    r"weekly\s+sentiment\s+rating",
+    r"align\s+personal\s+feelings\s+with",
+    r"disagreement\s+slows\s+development",
+    r"mandatory\s+optimism\s+training",
+    r"approval\s+ratings\s+for\s+government",
+    r"score\s+above\s+\w*\s*satisfaction",
+    r"mandatory\s+\w+\s+training",
+    r"attendance\s+at\s+gratitude",
+    r"require.*every\s+citizen.*(?:emotional|approval|rating)",
+    r"submit\s+weekly\s+(?:emotional|approval)",
+]
+
+# Value terms for clash detection (claim to protect X, then restrict X)
+VALUE_TERMS_FOR_CLASH = frozenset({
+    "freedom", "democracy", "choice", "liberty", "rights", "free",
+})
+OBLIGATION_TERMS = frozenset({
+    "require", "requires", "required", "mandatory", "must", "mandate",
+})
+
 # === CONTEXT PLAUSIBILITY: Real-world political/military discourse ===
 # High density = plausible context = LOWER satire probability
 GEOPOLITICAL_TERMS = frozenset({
@@ -73,7 +111,57 @@ GEOPOLITICAL_TERMS = frozenset({
 })
 
 
-def _absurdity_score(text: str) -> float:
+def _implausible_policy_score(text: str, patterns: list) -> float:
+    """0-1: Implausible policy phrases (enforceable emotions, mandatory feelings)."""
+    if not patterns:
+        return 0.0
+    lower = text.lower()
+    for pat in patterns:
+        if isinstance(pat, str):
+            try:
+                if re.search(pat, lower, re.IGNORECASE):
+                    return 0.7
+            except re.error:
+                if pat.lower() in lower:
+                    return 0.7
+    return 0.0
+
+
+def _escalation_absurdity_score(text: str) -> float:
+    """0-1: Universal scope + high-frequency + subjective measure = implausible."""
+    lower = text.lower()
+    has_universal = bool(re.search(r"\b(?:every|all|each)\s+(?:citizen|person|voter)\b", lower))
+    has_frequent = bool(re.search(r"\b(?:weekly|daily|hourly)\b", lower))
+    has_subjective = bool(re.search(r"\b(?:emotional|approval|sentiment|satisfaction|feelings?)\b", lower))
+    if has_universal and has_frequent and has_subjective:
+        return 0.75
+    return 0.0
+
+
+def _value_clash_score(text: str) -> float:
+    """0-1: Claim to protect X (freedom) then propose policy that restricts X."""
+    from discourse_engine.utils.text_utils import split_sentences
+
+    sentences = split_sentences(text)
+    if len(sentences) < 2:
+        return 0.0
+
+    # Value terms in first half
+    first_half = " ".join(sentences[: len(sentences) // 2 + 1]).lower()
+    words_first = set(re.findall(r"\b\w+\b", first_half))
+    has_value = bool(words_first & VALUE_TERMS_FOR_CLASH)
+
+    # Obligation in second half
+    second_half = " ".join(sentences[len(sentences) // 2 :]).lower()
+    words_second = set(re.findall(r"\b\w+\b", second_half))
+    has_obligation = bool(words_second & OBLIGATION_TERMS)
+
+    if has_value and has_obligation:
+        return 0.65
+    return 0.0
+
+
+def _absurdity_score(text: str, implausible_patterns: list | None = None) -> float:
     """0-1: Semantic absurdity. High only for impossible/playful outcomes."""
     lower = text.lower()
     score = 0.0
@@ -94,15 +182,23 @@ def _absurdity_score(text: str) -> float:
     if DISPROPORTIONATE_ABSURD.search(text):
         score = max(score, 0.8)
 
+    # Policy plausibility ontology (Layer 2)
+    patterns = implausible_patterns or DEFAULT_IMPLAUSIBLE_POLICY_PATTERNS
+    score = max(score, _implausible_policy_score(text, patterns))
+
+    # Escalation beyond plausible range
+    score = max(score, _escalation_absurdity_score(text))
+
     return score
 
 
-def _incongruity_score(text: str) -> float:
-    """0-1: Self-undermining, internal contradiction."""
+def _incongruity_score(text: str, value_clash: float = 0.0) -> float:
+    """0-1: Self-undermining, internal contradiction, value clash."""
     lower = text.lower()
+    base = 0.0
     if any(re.search(pat, lower) for pat in CONTRADICTION_MARKERS):
-        return 0.8
-    return 0.0
+        base = 0.8
+    return max(base, value_clash)
 
 
 def _hyperbole_score(text: str) -> float:
@@ -139,12 +235,19 @@ class SatireAnalyzer:
     Satire detector using: Satire = (H * A * I) / (0.5 + C)
 
     - H = Hyperbole (intensity)
-    - A = Absurdity (semantic impossibility) — GATE: if low, score collapses
-    - I = Incongruity (self-undermining)
+    - A = Absurdity (semantic impossibility, implausible policy, escalation)
+    - I = Incongruity (self-undermining, value clash)
     - C = Context plausibility (real political/military discourse)
 
     War speeches have high H but low A and high C → low satire.
     """
+
+    def __init__(self, lexicon_dir: Path | None = None) -> None:
+        if lexicon_dir is None:
+            lexicon_dir = Path(__file__).parent.parent / "lexicons"
+        self.lexicon_dir = Path(lexicon_dir)
+        raw = _load_lexicon(self.lexicon_dir, "implausible_policy_phrases")
+        self._implausible_patterns = raw if isinstance(raw, list) else []
 
     def analyze(self, text: str) -> tuple[float, list[SatireSignal], str]:
         """
@@ -155,8 +258,9 @@ class SatireAnalyzer:
             return 0.0, [], "Uncertain"
 
         H = _hyperbole_score(text)
-        A = _absurdity_score(text)
-        I = _incongruity_score(text)
+        A = _absurdity_score(text, self._implausible_patterns)
+        value_clash = _value_clash_score(text)
+        I = _incongruity_score(text, value_clash)
         C = _context_plausibility_score(text)
 
         signals: list[SatireSignal] = []

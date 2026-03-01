@@ -26,7 +26,22 @@ def run_pipeline(text: str, config: Config | None = None, context_note: str | No
         context_note = detect_comedic_context(text)
         text = preprocess_transcript(text)
 
-    satire_prob, satire_signals, content_type = SatireAnalyzer().analyze(text)
+    satire_prob, satire_signals, content_type = SatireAnalyzer(
+        lexicon_dir=config.lexicon_dir
+    ).analyze(text)
+
+    # Optional LLM enhancement for satire (subtle irony)
+    if config.llm_enhance and (config.llm_api_key or config.ollama_model):
+        from discourse_engine.llm_enhancement import enhance_satire_irony
+        satire_prob, satire_signals = enhance_satire_irony(
+            text,
+            satire_prob,
+            satire_signals,
+            api_key=config.llm_api_key,
+            model=config.llm_model,
+            ollama_model=config.ollama_model,
+            ollama_base=config.ollama_base,
+        )
 
     stats = StatisticsAnalyzer().analyze(text)
     trigger = TriggerProfileAnalyzer(lexicon_dir=config.lexicon_dir).analyze(text)
@@ -34,8 +49,20 @@ def run_pipeline(text: str, config: Config | None = None, context_note: str | No
     modal_pronoun = ModalPronounAnalyzer().analyze(text)
     fallacies = LogicalFallacyAnalyzer().analyze(text)
     assumptions = HiddenAssumptionExtractor(
-        api_key=config.llm_api_key, model=config.llm_model
+        api_key=config.llm_api_key, model=config.llm_model, lexicon_dir=config.lexicon_dir
     ).analyze(text)
+
+    # Optional LLM enhancement for assumptions (when structural found few/none)
+    if config.llm_enhance and (config.llm_api_key or config.ollama_model):
+        from discourse_engine.llm_enhancement import enhance_assumptions
+        assumptions = enhance_assumptions(
+            text,
+            assumptions,
+            api_key=config.llm_api_key,
+            model=config.llm_model,
+            ollama_model=config.ollama_model,
+            ollama_base=config.ollama_base,
+        )
     agenda_flags = HiddenAgendaAnalyzer(lexicon_dir=config.lexicon_dir).analyze(text)
 
     return Report(

@@ -11,6 +11,9 @@ class Config:
     llm_api_key: str | None = None
     llm_model: str = "gpt-4"
     lexicon_dir: Path | None = None
+    llm_enhance: bool = False
+    ollama_model: str | None = None
+    ollama_base: str = "http://localhost:11434"
 
     def __post_init__(self) -> None:
         if self.lexicon_dir is None:

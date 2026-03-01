@@ -1,10 +1,22 @@
 """Rule-based hidden assumption extraction."""
 
+import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from discourse_engine.models.report import AssumptionFlag
 from discourse_engine.utils.text_utils import split_sentences
+
+
+def _load_lexicon(lexicon_dir: Path, name: str) -> list[str]:
+    """Load a JSON lexicon file."""
+    path = lexicon_dir / f"{name}.json"
+    if not path.exists():
+        return []
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    return data if isinstance(data, list) else []
 
 # ---------------------------------------------------------------------------
 # Presupposition triggers (linguistic constructions that imply unstated beliefs)
@@ -77,6 +89,29 @@ LOADED_QUESTION_PATTERNS = (
 SUGGESTIVE_QUESTION_PATTERN = re.compile(
     r"\bis\s+(?:he|she|they|it)\s+(?:\w+\s+)?(?:or\s+)?(?:\w+\s+)?\?",
     re.IGNORECASE,
+)
+
+# ---------------------------------------------------------------------------
+# Structural assumption patterns (Layer 2)
+# ---------------------------------------------------------------------------
+
+# Necessity modal + outcome: Entity must/need to/require Action to/for Outcome
+NECESSITY_MODAL_OUTCOME = re.compile(
+    r"\b(\w+(?:\s+\w+){0,3})\s+(?:must|need\s+to|needs\s+to|require|requires|has\s+to|have\s+to|should)\s+"
+    r"(\w+(?:\s+\w+){0,4})\s+(?:to|for)\s+(\w+(?:\s+\w+){0,2})\b",
+    re.IGNORECASE,
+)
+
+# Conditional necessity: if/when X, (then) we must/need to/should
+CONDITIONAL_NECESSITY = re.compile(
+    r"\b(if|when)\s+[^,]+,\s+(?:then\s+)?(?:we\s+)?(?:must|need\s+to|needs\s+to|should)\b",
+    re.IGNORECASE,
+)
+
+# Without X, Y: without X ... collapse/fail/impossible/cannot
+WITHOUT_X_Y = re.compile(
+    r"\bwithout\s+(\w+(?:\s+\w+){0,2}).*?(collapse|fail|impossible|cannot|stagnat\w*)",
+    re.IGNORECASE | re.DOTALL,
 )
 
 
@@ -239,20 +274,96 @@ def _check_loaded_questions(sentence: str) -> list[_AssumptionMatch]:
     return matches
 
 
+def _check_structural_assumptions(
+    sentence: str,
+    value_outcomes: list[str],
+    necessity_modals: list[str],
+) -> list[_AssumptionMatch]:
+    """Check for structural patterns that imply unstated premises (Layer 2)."""
+    matches: list[_AssumptionMatch] = []
+    lower = sentence.lower()
+    words = _get_words_lower(sentence)
+
+    # Necessity modal + outcome: "X must adapt to survive" -> "Adaptation is necessary for survival"
+    m = NECESSITY_MODAL_OUTCOME.search(sentence)
+    if m:
+        base = 0.72 - _hedging_penalty(sentence)
+        matches.append(_AssumptionMatch(
+            "Structural: Action is necessary for Outcome (necessity modal + outcome)",
+            f"'{m.group(2)}' for '{m.group(3)}'",
+            sentence,
+            base,
+        ))
+
+    # Conditional necessity: "If X, we must Y"
+    if CONDITIONAL_NECESSITY.search(sentence):
+        base = 0.68 - _hedging_penalty(sentence)
+        matches.append(_AssumptionMatch(
+            "Structural: Condition implies necessity of consequence",
+            "if/when ... must/need to/should",
+            sentence,
+            base,
+        ))
+
+    # Without X, Y: "Without reform, collapse is inevitable"
+    m = WITHOUT_X_Y.search(sentence)
+    if m:
+        base = 0.70 - _hedging_penalty(sentence)
+        matches.append(_AssumptionMatch(
+            "Structural: X is necessary for avoiding Y",
+            f"{m.group(1).strip()} -> {m.group(2)}",
+            sentence,
+            base,
+        ))
+
+    # Value-loaded outcome: sentence has outcome term + necessity modal
+    value_set = {v.lower() for v in value_outcomes}
+    modal_phrases = ["must", "need to", "needs to", "require", "requires", "has to", "have to", "should"]
+    has_modal = any(ph in lower for ph in modal_phrases)
+    has_value_outcome = bool(words & value_set)
+    if has_modal and has_value_outcome:
+        # Avoid duplicate if we already matched necessity modal + outcome
+        if not matches:
+            base = 0.60 - _hedging_penalty(sentence)
+            matches.append(_AssumptionMatch(
+                "Structural: Outcome is desirable/necessary (value-loaded framing)",
+                "value outcome + necessity modal",
+                sentence,
+                base,
+            ))
+
+    return matches
+
+
+# Default value outcomes if lexicon missing
+DEFAULT_VALUE_OUTCOMES = ["survival", "progress", "collapse", "excellence", "integrity", "stability", "innovation", "efficiency"]
+DEFAULT_NECESSITY_MODALS = ["must", "need to", "needs to", "require", "requires", "has to", "have to", "should"]
+
+
 class HiddenAssumptionExtractor:
     """
     Extracts hidden assumptions via rule-based pattern matching.
     Detects presuppositions, enthymemes, epistemic shortcuts, loaded questions,
-    and vague authority references.
+    vague authority references, and structural patterns (necessity modals, conditionals).
     """
 
-    def __init__(self, api_key: str | None = None, model: str = "gpt-4") -> None:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str = "gpt-4",
+        lexicon_dir: Path | None = None,
+    ) -> None:
         """
         Initialize the extractor.
         api_key and model are kept for API compatibility but ignored in rule-based mode.
         """
         self.api_key = api_key
         self.model = model
+        if lexicon_dir is None:
+            lexicon_dir = Path(__file__).parent.parent / "lexicons"
+        self.lexicon_dir = Path(lexicon_dir)
+        self._value_outcomes = _load_lexicon(self.lexicon_dir, "value_outcomes") or DEFAULT_VALUE_OUTCOMES
+        self._necessity_modals = _load_lexicon(self.lexicon_dir, "necessity_modals") or DEFAULT_NECESSITY_MODALS
 
     def analyze(self, text: str) -> list[AssumptionFlag]:
         """
@@ -272,6 +383,11 @@ class HiddenAssumptionExtractor:
             all_matches.extend(_check_vague_authority(sentence))
             all_matches.extend(_check_conclusion_markers(sentence))
             all_matches.extend(_check_loaded_questions(sentence))
+            all_matches.extend(
+                _check_structural_assumptions(
+                    sentence, self._value_outcomes, self._necessity_modals
+                )
+            )
 
         # Deduplicate by full description (keep first occurrence)
         seen: set[str] = set()

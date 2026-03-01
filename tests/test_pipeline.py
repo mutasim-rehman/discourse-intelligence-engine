@@ -156,6 +156,24 @@ def test_hidden_assumptions_vague_authority() -> None:
     assert "vague" in assumption_text or "authority" in assumption_text
 
 
+def test_hidden_assumptions_structural_necessity_modal() -> None:
+    """Structural: 'X must adapt to survive' -> Action necessary for Outcome."""
+    text = "Traditional institutions must adapt to survive."
+    report = run_pipeline(text)
+    assert len(report.hidden_assumptions) >= 1
+    assumption_text = " ".join(a.description for a in report.hidden_assumptions).lower()
+    assert "structural" in assumption_text or "necessary" in assumption_text
+
+
+def test_hidden_assumptions_structural_without_x_y() -> None:
+    """Structural: 'Without X, Y' -> X necessary for avoiding Y."""
+    text = "Without reform, collapse is inevitable."
+    report = run_pipeline(text)
+    assert len(report.hidden_assumptions) >= 1
+    assumption_text = " ".join(a.description for a in report.hidden_assumptions).lower()
+    assert "structural" in assumption_text or "necessary" in assumption_text
+
+
 def test_hidden_assumptions_sample_text_detects_some() -> None:
     """SAMPLE_TEXT with threat/crisis language may trigger presupposition or other patterns."""
     report = run_pipeline(SAMPLE_TEXT)
@@ -203,6 +221,15 @@ def test_hidden_agenda_speculation() -> None:
     report = run_pipeline(text)
     agenda_techniques = [f.technique for f in report.hidden_agenda_flags]
     assert "Speculation" in agenda_techniques
+
+
+def test_hidden_agenda_policy_advocacy() -> None:
+    """Policy advocacy (verb + value term) is detected."""
+    text = "Expanding private-sector partnerships will encourage innovation and efficiency."
+    report = run_pipeline(text)
+    agenda_families = [f.family for f in report.hidden_agenda_flags]
+    techniques = [f.technique for f in report.hidden_agenda_flags]
+    assert "Advocating" in agenda_families or "Directional push" in techniques
 
 
 def test_hidden_agenda_emotional_framing() -> None:

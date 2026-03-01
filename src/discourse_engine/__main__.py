@@ -1,9 +1,11 @@
 """CLI entry point: interactive text input, YouTube video, or piped input."""
 
 import argparse
+import os
 import sys
 
 from discourse_engine import run_pipeline, format_report
+from discourse_engine.models.config import Config
 
 
 def fetch_youtube_transcript(url_or_id: str) -> tuple[str, str | None]:
@@ -68,6 +70,16 @@ def main() -> None:
         metavar="PATH",
         help="Export v3 visualization data to JSON file",
     )
+    parser.add_argument(
+        "--llm-enhance",
+        action="store_true",
+        help="Enable optional LLM enhancement for subtle irony and assumptions (requires OPENAI_API_KEY or --ollama-model)",
+    )
+    parser.add_argument(
+        "--ollama-model",
+        metavar="MODEL",
+        help="Ollama model for LLM enhancement (e.g. llama3.2:3b)",
+    )
 
     args = parser.parse_args()
 
@@ -91,7 +103,12 @@ def main() -> None:
         print("No text provided.", file=sys.stderr)
         sys.exit(1)
 
-    report = run_pipeline(text, context_note=context_note)
+    config = Config(
+        llm_enhance=args.llm_enhance,
+        ollama_model=args.ollama_model,
+        llm_api_key=os.environ.get("OPENAI_API_KEY") if args.llm_enhance else None,
+    )
+    report = run_pipeline(text, config=config, context_note=context_note)
     print()
     print(format_report(report))
 
