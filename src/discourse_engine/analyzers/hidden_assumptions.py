@@ -462,6 +462,22 @@ class HiddenAssumptionExtractor:
         # Density factor: more rhetorical signals in text -> slightly higher confidence
         density_factor = _compute_density_factor(text)
 
+        # Assumption validation: reduce confidence when no justification nearby
+        justification_words = frozenset({
+            "because", "since", "evidence", "data", "study", "studies", "research",
+            "shows", "indicates", "demonstrates", "proves", "support", "supporting",
+        })
+
+        def _has_justification_nearby(sent: str, sent_list: list[str]) -> bool:
+            idx = next((i for i, s in enumerate(sent_list) if s == sent), -1)
+            if idx < 0:
+                return False
+            context = " ".join(
+                sent_list[max(0, idx - 1) : min(len(sent_list), idx + 2)]
+            ).lower()
+            words = set(re.findall(r"\b\w+\b", context))
+            return bool(words & justification_words)
+
         # Deduplicate by full description (keep first occurrence); apply suppressions
         seen: set[str] = set()
         result: list[AssumptionFlag] = []
@@ -470,6 +486,8 @@ class HiddenAssumptionExtractor:
             if full not in seen:
                 seen.add(full)
                 conf = _apply_suppressions(m.confidence, m.sentence, density_factor)
+                if not _has_justification_nearby(m.sentence, sentences):
+                    conf *= 0.95  # Slightly reduce when assumption appears unsupported
                 result.append(AssumptionFlag(description=full, sentence=m.sentence, confidence=conf))
 
         return result

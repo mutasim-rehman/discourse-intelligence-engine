@@ -26,6 +26,16 @@ def test_run_pipeline_returns_report() -> None:
     assert report.hidden_agenda_flags is not None
 
 
+def test_tone_not_always_urgent() -> None:
+    """Neutral policy text should not be labeled Urgent (modal verbs != urgency)."""
+    text = (
+        "Public institutions must modernize to remain responsive. "
+        "Digital tools can improve accountability."
+    )
+    report = run_pipeline(text)
+    assert "Urgent" not in report.tone
+
+
 def test_trigger_profile_levels() -> None:
     """Trigger profile has Low/Moderate/High levels."""
     report = run_pipeline(SAMPLE_TEXT)
@@ -247,6 +257,14 @@ def test_hidden_agenda_policy_advocacy() -> None:
     agenda_families = [f.family for f in report.hidden_agenda_flags]
     techniques = [f.technique for f in report.hidden_agenda_flags]
     assert "Advocating" in agenda_families or "Directional push" in techniques
+
+
+def test_hidden_agenda_descriptive_not_flagged() -> None:
+    """Descriptive meta-analysis (divides, often) should NOT be flagged as Directional push."""
+    text = "Public debate often divides participants into progress-oriented reformers and tradition-oriented conservatives, yet this binary framing oversimplifies discussions."
+    report = run_pipeline(text)
+    agenda_techniques = [f.technique for f in report.hidden_agenda_flags]
+    assert "Directional push" not in agenda_techniques
 
 
 def test_hidden_agenda_emotional_framing() -> None:

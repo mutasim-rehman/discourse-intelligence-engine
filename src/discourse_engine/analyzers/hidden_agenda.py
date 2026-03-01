@@ -314,14 +314,28 @@ class HiddenAgendaAnalyzer:
             words = set(re.findall(r"\b\w+\b", s.lower()))
             return bool(words & value_set)
 
+        # Prescriptive: should, must, need to, recommend, requires — advocating action
+        # Descriptive: divides, characterizes, describes, often — meta-analysis of discourse
+        PRESCRIPTIVE_MARKERS = re.compile(
+            r"\b(?:should|must|need\s+to|requires?|recommend|prioritize|ensure|will\s+encourage|encourage)\b",
+            re.IGNORECASE,
+        )
+        DESCRIPTIVE_MARKERS = re.compile(
+            r"\b(?:divides?|characterizes?|describes?|often|typically|frequently|tends?\s+to)\b",
+            re.IGNORECASE,
+        )
+
         for sent in sentences:
             has_policy = _has_policy_verb(sent)
             has_value = _has_value_term(sent)
-            if has_policy and has_value:
+            is_prescriptive = bool(PRESCRIPTIVE_MARKERS.search(sent))
+            is_descriptive = bool(DESCRIPTIVE_MARKERS.search(sent))
+            # Only flag when prescriptive; suppress when descriptive meta-analysis
+            if has_policy and has_value and is_prescriptive and not is_descriptive:
                 flags.append(AgendaFlag(
                     family="Advocating",
                     technique="Directional push",
-                    pattern_hint="policy advocacy verb + value term (innovation, efficiency, etc.)",
+                    pattern_hint="policy advocacy verb + value term (prescriptive)",
                     sentence=sent,
                     confidence=0.72,
                 ))
