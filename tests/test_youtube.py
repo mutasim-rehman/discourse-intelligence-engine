@@ -40,6 +40,6 @@ def test_fetch_transcript_requires_valid_id() -> None:
 
 def test_fetch_transcript_integration() -> None:
     """Fetch transcript from a known video (Rick Astley - has captions)."""
-    text = fetch_transcript("dQw4w9WgXcQ")
+    text, _ = fetch_transcript("dQw4w9WgXcQ")
     assert len(text) > 100
     assert "never" in text.lower() or "give" in text.lower()

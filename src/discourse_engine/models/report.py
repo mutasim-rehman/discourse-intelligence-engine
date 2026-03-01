@@ -53,3 +53,6 @@ class Report:
     logical_fallacy_flags: list[FallacyFlag]
     hidden_assumptions: list[AssumptionFlag]
     hidden_agenda_flags: list[AgendaFlag]
+    context_note: str | None = None
+    satire_probability: float = 0.0
+    content_type_hint: str = "Genuine Argument"

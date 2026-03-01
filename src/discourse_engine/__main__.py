@@ -6,8 +6,8 @@ import sys
 from discourse_engine import run_pipeline, format_report
 
 
-def fetch_youtube_transcript(url_or_id: str) -> str:
-    """Fetch transcript from a YouTube video URL or video ID."""
+def fetch_youtube_transcript(url_or_id: str) -> tuple[str, str | None]:
+    """Fetch transcript from a YouTube video URL or video ID. Returns (text, context_note)."""
     from discourse_engine.utils.youtube import fetch_transcript
 
     return fetch_transcript(url_or_id)
@@ -61,10 +61,11 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    context_note: str | None = None
     if args.youtube:
         try:
             print("Fetching transcript...", file=sys.stderr)
-            text = fetch_youtube_transcript(args.youtube)
+            text, context_note = fetch_youtube_transcript(args.youtube)
             print(f"Transcript length: {len(text)} chars\n", file=sys.stderr)
         except ValueError as e:
             print(str(e), file=sys.stderr)
@@ -80,7 +81,7 @@ def main() -> None:
         print("No text provided.", file=sys.stderr)
         sys.exit(1)
 
-    report = run_pipeline(text)
+    report = run_pipeline(text, context_note=context_note)
     print()
     print(format_report(report))
 

@@ -4,22 +4,32 @@ import re
 
 
 def split_sentences(text: str) -> list[str]:
-    """Split text into sentences."""
+    """Split text into sentences. Uses same logic as split_sentences_with_offsets."""
     if not text or not text.strip():
         return []
-    return [s.strip() for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s.strip()]
+    return [s for s, _, _ in split_sentences_with_offsets(text)]
 
 
 def split_sentences_with_offsets(text: str) -> list[tuple[str, int, int]]:
-    """Split text into sentences with (sentence, start_offset, end_offset)."""
+    """Split text into sentences with (sentence, start_offset, end_offset).
+
+    Avoids splitting on abbreviations (e.g. a.m., p.m., U.S.) by requiring
+    the sentence-ending period to not be followed by a word character.
+    """
     if not text or not text.strip():
         return []
     result: list[tuple[str, int, int]] = []
-    pattern = re.compile(r"([^.!?]*[.!?])(?:\s+|$)", re.DOTALL)
+    # Don't split on period when followed by letter (a.m., p.m., U.S., etc.)
+    pattern = re.compile(r"([^.!?]*[.!?])(?!\w)(?:\s+|$)", re.DOTALL)
     for m in pattern.finditer(text):
         s = m.group(1).strip()
-        if s:
+        # Skip abbreviation fragments like "m." or "a." from "3 a.m."
+        if s and len(s) > 2:
             result.append((s, m.start(1), m.end(1)))
+        elif s and result:
+            # Merge very short fragment (likely abbrev) with previous sentence
+            prev_sent, prev_start, prev_end = result[-1]
+            result[-1] = (f"{prev_sent} {s}".strip(), prev_start, m.end(1))
     if not result and text.strip():
         result.append((text.strip(), 0, len(text)))
     return result
@@ -44,9 +54,5 @@ def count_words(text: str) -> int:
 
 
 def count_sentences(text: str) -> int:
-    """Count sentences using period, exclamation, question mark boundaries."""
-    if not text or not text.strip():
-        return 0
-    # Split on sentence-ending punctuation followed by whitespace
-    parts = re.split(r"(?<=[.!?])\s+", text.strip())
-    return len([p for p in parts if p.strip()])
+    """Count sentences using same logic as split_sentences."""
+    return len(split_sentences(text))

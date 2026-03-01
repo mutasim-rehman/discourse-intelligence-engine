@@ -78,6 +78,7 @@ def test_format_report_produces_expected_sections() -> None:
     report = run_pipeline(SAMPLE_TEXT)
     formatted = format_report(report)
     assert "--- Discourse Analysis Report ---" in formatted
+    assert "Content Type:" in formatted
     assert "Word Count:" in formatted
     assert "Sentence Count:" in formatted
     assert "Trigger Profile:" in formatted
