@@ -58,6 +58,16 @@ def main() -> None:
         nargs="*",
         help="Text to analyze (ignored when using --youtube)",
     )
+    parser.add_argument(
+        "--v3",
+        action="store_true",
+        help="Enable v3 Narrative Arc & Power Dynamics analysis",
+    )
+    parser.add_argument(
+        "--export-viz",
+        metavar="PATH",
+        help="Export v3 visualization data to JSON file",
+    )
 
     args = parser.parse_args()
 
@@ -84,6 +94,20 @@ def main() -> None:
     report = run_pipeline(text, context_note=context_note)
     print()
     print(format_report(report))
+
+    if args.v3 or args.export_viz:
+        from discourse_engine.v3.pipeline import run_narrative_arc, export_viz_to_json
+
+        arc = run_narrative_arc(text)
+        print()
+        print("--- V3 Narrative Arc ---")
+        print(arc["summary"])
+        if arc["escalation_points"]:
+            print(f"Escalation at chunks: {arc['escalation_points']}")
+        if arc["framing_shifts"]:
+            print("Framing shifts:", arc["framing_shifts"])
+        if args.export_viz:
+            export_viz_to_json(arc["viz"], args.export_viz)
 
 
 if __name__ == "__main__":
