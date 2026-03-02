@@ -36,6 +36,7 @@ def modal_strength_from_type(detection_type: str) -> float:
     # Higher = stronger structural signal
     mapping = {
         "loaded_question": 0.95,
+        "conditional_guilt": 0.82,
         "epistemic_shortcut": 0.85,
         "factive": 0.80,
         "necessity_modal_outcome": 0.75,

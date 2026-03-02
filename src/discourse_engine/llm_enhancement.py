@@ -180,6 +180,7 @@ def enhance_satire_irony(
     signals: list,
     *,
     trigger_profile: TriggerProfile | None = None,
+    logical_leaps: list | None = None,
     api_key: str | None = None,
     model: str = "gpt-4",
     ollama_model: str | None = None,
@@ -187,19 +188,22 @@ def enhance_satire_irony(
 ) -> tuple[float, list]:
     """
     Optional LLM check for subtle irony when structural signals are inconclusive.
-    Called when satire is 0.2-0.5 and value clash detected.
+    Called when satire is 0.1-0.5 (lowered from 0.2) or when logical leaps detected.
 
-    Incongruity rule: If Authority>0.6 (High) and text contains domestic/trivial
-    nouns (hair dryer, shovel, towel, etc.), subtract 0.3 from base_prob. This
-    pushes "certain 0.7" down to "questionable 0.4" so LLM adjudicates.
+    Incongruity rule: High Authority + domestic nouns → subtract 0.3.
+    Leap trigger: If logical_leaps > 0, force LLM call even when base is 0%.
     """
     # Incongruity rule: High Authority + domestic/trivial nouns → subtract 0.3
     if trigger_profile and trigger_profile.authority_level == "High" and _has_domestic_nouns(text):
         base_probability = max(0.0, base_probability - 0.3)
-        if base_probability < 0.2:
+        if base_probability < 0.1:
             base_probability = 0.35  # Force into ambiguous zone so LLM triggers
 
-    if base_probability < 0.2 or base_probability > 0.5:
+    # Leap trigger: logical leaps indicate non-sequitur → force LLM to adjudicate
+    if logical_leaps and len(logical_leaps) > 0:
+        base_probability = 0.35
+
+    if base_probability < 0.1 or base_probability > 0.5:
         return base_probability, signals
 
     prompt = f"""Does this text contain subtle irony or mockery (saying one thing while implying the opposite)?

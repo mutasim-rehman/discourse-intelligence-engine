@@ -110,6 +110,12 @@ LOADED_QUESTION_PATTERNS = (
     re.compile(r"\bis\s+\w+\s+(?:really|actually)\s+(?:so|that)\s+", re.IGNORECASE),
 )
 
+# Conditional guilt: "I'm sure you didn't mean to X" - implies fault while feigning benefit of doubt
+CONDITIONAL_GUILT_PATTERNS = (
+    re.compile(r"\b(?:I['\u2019]?m|I am|we['\u2019]?re|we are)\s+(?:sure|hope|trust)\s+(?:you|they)\s+(?:didn['\u2019]?t|wouldn['\u2019]?t)\s+mean\s+to\b", re.IGNORECASE),
+    re.compile(r"\b(?:I['\u2019]?d hate for|let['\u2019]?s hope)\s+.*\s+(?:your|their)\s+", re.IGNORECASE),
+)
+
 # Suggestive questioning: stacked alternatives implying negative
 SUGGESTIVE_QUESTION_PATTERN = re.compile(
     r"\bis\s+(?:he|she|they|it)\s+(?:\w+\s+)?(?:or\s+)?(?:\w+\s+)?\?",
@@ -341,6 +347,23 @@ def _check_loaded_questions(sentence: str) -> list[_AssumptionMatch]:
     return matches
 
 
+def _check_conditional_guilt(sentence: str) -> list[_AssumptionMatch]:
+    """Check for conditional guilt framing: 'I'm sure you didn't mean to...'"""
+    matches: list[_AssumptionMatch] = []
+    base = 0.78 - _hedging_penalty(sentence)
+    for pat in CONDITIONAL_GUILT_PATTERNS:
+        if pat.search(sentence):
+            matches.append(_AssumptionMatch(
+                "Conditional guilt: implies fault while feigning benefit of doubt",
+                "I'm sure you didn't mean / I'd hate for / let's hope",
+                sentence,
+                "conditional_guilt",
+                base,
+            ))
+            return matches
+    return matches
+
+
 def _check_structural_assumptions(
     sentence: str,
     value_outcomes: list[str],
@@ -466,6 +489,7 @@ class HiddenAssumptionExtractor:
             all_matches.extend(_check_vague_authority(sentence))
             all_matches.extend(_check_conclusion_markers(sentence))
             all_matches.extend(_check_loaded_questions(sentence))
+            all_matches.extend(_check_conditional_guilt(sentence))
             all_matches.extend(
                 _check_structural_assumptions(
                     sentence, self._value_outcomes, self._necessity_modals

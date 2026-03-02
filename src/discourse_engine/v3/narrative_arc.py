@@ -83,6 +83,48 @@ def _cosine_similarity(s1: str, s2: str) -> float:
     return overlap / ((len(w1) * len(w2)) ** 0.5)
 
 
+def compute_logical_leaps(text: str) -> list[LogicalLeap]:
+    """
+    Lightweight extraction of problem-solution pairs with low semantic similarity.
+    Used for Bridge Rule (satire adjustment) and LLM trigger.
+    """
+    if not text or not text.strip():
+        return []
+    sentences = split_sentences(text)
+    if len(sentences) < 2:
+        return []
+    lower_sents = [s.lower() for s in sentences]
+    result: list[LogicalLeap] = []
+    for i, sent in enumerate(lower_sents):
+        words_i = set(re.findall(r"\b\w+\b", sent))
+        if not (words_i & PROBLEM_TERMS):
+            continue
+        for j, sent_j in enumerate(lower_sents):
+            if j <= i or j - i > 3:
+                continue
+            words_j = set(re.findall(r"\b\w+\b", sent_j))
+            has_solution = (
+                bool(words_j & SOLUTION_TERMS)
+                or "must" in sent_j
+                or "need" in sent_j
+                or "hair dryer" in sent_j
+                or "hair dryers" in sent_j
+                or "subsidy" in sent_j
+            )
+            if not has_solution:
+                continue
+            sim = _cosine_similarity(sentences[i], sentences[j])
+            if sim < LOGICAL_LEAP_SIMILARITY_THRESHOLD:
+                result.append(LogicalLeap(
+                    problem_sent_idx=i,
+                    solution_sent_idx=j,
+                    similarity=sim,
+                    problem_snippet=sentences[i][:80] + ("..." if len(sentences[i]) > 80 else ""),
+                    solution_snippet=sentences[j][:80] + ("..." if len(sentences[j]) > 80 else ""),
+                ))
+    return result
+
+
 class NarrativeArcAnalyzer:
     """
     Analyzes narrative arc and power dynamics across document chunks.
@@ -215,37 +257,7 @@ class NarrativeArcAnalyzer:
                 shifts.append((i, d))
             prev_dom = d
 
-        # "Wait, What?" metric: problem sentence vs solution sentence with low semantic similarity
-        logical_leaps: list[LogicalLeap] = []
-        sentences = split_sentences(text)
-        lower_sents = [s.lower() for s in sentences]
-        for i, sent in enumerate(lower_sents):
-            words_i = set(re.findall(r"\b\w+\b", sent))
-            if not (words_i & PROBLEM_TERMS):
-                continue
-            for j, sent_j in enumerate(lower_sents):
-                if j <= i or j - i > 3:  # solution after problem, within 3 sentences
-                    continue
-                words_j = set(re.findall(r"\b\w+\b", sent_j))
-                has_solution = (
-                    bool(words_j & SOLUTION_TERMS)
-                    or "must" in sent_j
-                    or "need" in sent_j
-                    or "hair dryer" in sent_j
-                    or "hair dryers" in sent_j
-                    or "subsidy" in sent_j
-                )
-                if not has_solution:
-                    continue
-                sim = _cosine_similarity(sentences[i], sentences[j])
-                if sim < LOGICAL_LEAP_SIMILARITY_THRESHOLD:
-                    logical_leaps.append(LogicalLeap(
-                        problem_sent_idx=i,
-                        solution_sent_idx=j,
-                        similarity=sim,
-                        problem_snippet=sentences[i][:80] + ("..." if len(sentences[i]) > 80 else ""),
-                        solution_snippet=sentences[j][:80] + ("..." if len(sentences[j]) > 80 else ""),
-                    ))
+        logical_leaps = compute_logical_leaps(text)
 
         summary_parts = [
             f"Analyzed {len(metrics_list)} chunks ({total_sentences} sentences).",

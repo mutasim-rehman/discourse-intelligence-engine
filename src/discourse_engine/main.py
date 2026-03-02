@@ -13,6 +13,29 @@ from discourse_engine.analyzers.satire import SatireAnalyzer
 from discourse_engine.models.report import Report
 from discourse_engine.models.config import Config
 
+# Bridge Rule: +40% satire when logical leaps indicate non-sequitur
+BRIDGE_RULE_SATIRE_BOOST = 0.40
+
+
+def _apply_bridge_rule(satire_prob: float, logical_leaps: list) -> float:
+    """If logical leaps > 1 or avg similarity < 0.2, boost satire probability."""
+    if not logical_leaps:
+        return satire_prob
+    n = len(logical_leaps)
+    avg_sim = sum(ll.similarity for ll in logical_leaps) / n if n else 0
+    if n > 1 or avg_sim < 0.2:
+        return min(1.0, satire_prob + BRIDGE_RULE_SATIRE_BOOST)
+    return satire_prob
+
+
+def _content_type_from_satire(prob: float) -> str:
+    """Map satire probability to content type hint."""
+    if prob >= 0.5:
+        return "Possibly Satire / Hyperbole"
+    if prob >= 0.25:
+        return "Uncertain (some satire signals)"
+    return "Persuasive Rhetoric (low satire probability)"
+
 
 def run_pipeline(text: str, config: Config | None = None, context_note: str | None = None) -> Report:
     """Run the full analysis pipeline on text and return a Report."""
@@ -31,6 +54,9 @@ def run_pipeline(text: str, config: Config | None = None, context_note: str | No
     ).analyze(text)
     trigger = TriggerProfileAnalyzer(lexicon_dir=config.lexicon_dir).analyze(text)
 
+    from discourse_engine.v3.narrative_arc import compute_logical_leaps
+    logical_leaps = compute_logical_leaps(text)
+
     # Optional LLM enhancement for satire (subtle irony)
     if config.llm_enhance and (config.llm_api_key or config.ollama_model):
         from discourse_engine.llm_enhancement import enhance_satire_irony
@@ -39,14 +65,17 @@ def run_pipeline(text: str, config: Config | None = None, context_note: str | No
             satire_prob,
             satire_signals,
             trigger_profile=trigger,
+            logical_leaps=logical_leaps,
             api_key=config.llm_api_key,
             model=config.llm_model,
             ollama_model=config.ollama_model,
             ollama_base=config.ollama_base,
         )
 
+    satire_prob = _apply_bridge_rule(satire_prob, logical_leaps)
+    content_type = _content_type_from_satire(satire_prob)
+
     stats = StatisticsAnalyzer().analyze(text)
-    tone = ToneAnalyzer().analyze(text)
     modal_pronoun = ModalPronounAnalyzer().analyze(text)
     fallacies = LogicalFallacyAnalyzer().analyze(text)
     assumptions = HiddenAssumptionExtractor(
@@ -65,6 +94,15 @@ def run_pipeline(text: str, config: Config | None = None, context_note: str | No
             ollama_base=config.ollama_base,
         )
     agenda_flags = HiddenAgendaAnalyzer(lexicon_dir=config.lexicon_dir).analyze(text)
+    tone = ToneAnalyzer().analyze(
+        text,
+        word_count=stats[0],
+        trigger_profile=trigger,
+        hidden_assumptions=assumptions,
+        hidden_agenda_flags=agenda_flags,
+        modal_verbs=modal_pronoun.modal_verbs,
+        pronoun_framing=modal_pronoun.pronoun_framing,
+    )
 
     return Report(
         word_count=stats[0],
