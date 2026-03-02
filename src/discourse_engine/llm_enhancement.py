@@ -142,11 +142,17 @@ Assumptions (numbered list or "None"):"""
     return new_flags
 
 
-# Domestic/trivial nouns that signal incongruity when paired with high Authority
-# (e.g. "hair dryers" as solution to "tropospheric containment failure" → likely satire)
+# Domestic/trivial nouns that signal incongruity when paired with Authority
 DOMESTIC_TRIVIAL_NOUNS = frozenset({
     "hair", "dryer", "dryers", "shovel", "shovels", "towel", "towels",
     "umbrella", "umbrellas", "raindrop", "raindrops", "vacuum",
+})
+
+# Absurdity anchors: low-stakes nouns that, when combined with Authority framing,
+# force satire check (e.g. "weaponized dust", "patriotic cleaning")
+ABSURD_ANCHORS = frozenset({
+    "dust", "scrub", "cleaning", "laundry", "hair dryer", "hair dryers",
+    "living room", "living rooms", "towel", "towels", "umbrella",
 })
 
 
@@ -192,7 +198,14 @@ def enhance_satire_irony(
 
     Incongruity rule: High Authority + domestic nouns → subtract 0.3.
     Leap trigger: If logical_leaps > 0, force LLM call even when base is 0%.
+    Absurdity anchor: Authority (Moderate/High) + low-stakes nouns → force 0.35.
     """
+    # Absurdity anchor: Authority + low-stakes objects (dust, cleaning, etc.) → force LLM
+    if trigger_profile and trigger_profile.authority_level in ("Moderate", "High"):
+        lower = text.lower()
+        if any(anchor in lower for anchor in ABSURD_ANCHORS):
+            base_probability = 0.35
+
     # Incongruity rule: High Authority + domestic/trivial nouns → subtract 0.3
     if trigger_profile and trigger_profile.authority_level == "High" and _has_domestic_nouns(text):
         base_probability = max(0.0, base_probability - 0.3)

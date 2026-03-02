@@ -54,15 +54,17 @@ PASSIVE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# Problem framing: global chaos, crisis, threat (for "Wait, What?" metric)
+# Problem framing: chaos, crisis, threat, weaponized threat (for "Wait, What?" metric)
 PROBLEM_TERMS = frozenset({
     "chaos", "collapse", "crisis", "threat", "failure", "danger", "disaster",
     "catastrophe", "destruction", "tyranny", "subsume", "containment",
+    "weaponized", "destabilize", "destabilizing", "enemy",
 })
-# Solution markers: policy verbs, subsidies, proposals
+# Solution markers: policy verbs, subsidies, domestic actions (high concept shift = satire)
 SOLUTION_TERMS = frozenset({
     "subsidy", "subsidies", "authorize", "must", "need", "require",
     "hair dryer", "hair dryers", "shovel", "shovels", "convert", "embrace",
+    "cleaning", "scrub", "restructure", "restructuring", "living rooms",
 })
 
 
@@ -110,6 +112,9 @@ def compute_logical_leaps(text: str) -> list[LogicalLeap]:
                 or "hair dryer" in sent_j
                 or "hair dryers" in sent_j
                 or "subsidy" in sent_j
+                or "restructure" in sent_j
+                or "cleaning" in sent_j
+                or "scrub" in sent_j
             )
             if not has_solution:
                 continue

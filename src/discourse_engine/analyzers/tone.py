@@ -23,13 +23,14 @@ OBLIGATION_MODAL = re.compile(
 SOFT_MODAL = re.compile(r"\b(?:would|might|may)\b", re.IGNORECASE)
 EPISTEMIC_IN_TEXT = re.compile(r"\bobviously|clearly|certainly\b", re.IGNORECASE)
 
-# Corporate jargon terms for Clinical tone (Jargon_Density)
+# Corporate/bureaucratic jargon terms (Jargon_Density)
 JARGON_TERMS = frozenset({
     "right-sizing", "decoupling", "headcount", "harmonization",
     "bandwidth", "synergy", "pivot", "streamline", "initiative",
     "trajectory", "frictionless", "optimize", "strategic", "stakeholder",
     "leverage", "paradigm", "ecosystem", "throughput", "operational",
-    "workforce", "scalable", "alignment", "resources",
+    "workforce", "scalable", "alignment", "align", "resources", "mandate",
+    "patriotic", "hygiene", "optimized", "output", "restructure",
 })
 
 # Strong urgency: explicit calls to action
@@ -106,5 +107,23 @@ class ToneAnalyzer:
             jargon_density = jargon_count / wc if wc else 0
             if jargon_density >= 0.10 or obscuration_count >= 3:
                 tones.append("Corporate/Clinical")
+
+        # Bureaucratic/Clinical: Authority Moderate + high jargon (e.g. "hygiene mandate", "patriotic output")
+        if wc > 30 and trigger_profile and trigger_profile.authority_level == "Moderate":
+            word_set: set[str] = set()
+            for w in words:
+                if len(w) <= 2:
+                    continue
+                clean = re.sub(r"\W", "", w).lower()
+                if clean:
+                    word_set.add(clean)
+                for part in re.split(r"[\-\']", w):
+                    if len(part) > 2:
+                        word_set.add(part.lower())
+            jargon_count = len(word_set & JARGON_TERMS)
+            jargon_density = jargon_count / wc if wc else 0
+            if jargon_density >= 0.06:
+                if "Bureaucratic/Clinical" not in tones and "Corporate/Clinical" not in tones:
+                    tones.append("Bureaucratic/Clinical")
 
         return tones

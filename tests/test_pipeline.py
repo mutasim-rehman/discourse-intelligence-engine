@@ -284,6 +284,18 @@ def test_hidden_agenda_obscuration() -> None:
     assert "Personnel Reduction" in techniques or "Objectification of Labor" in techniques
 
 
+def test_weaponized_dust_satire_signals() -> None:
+    """Absurdity anchors (dust, cleaning) + Authority Moderate → satire signals and logical leaps."""
+    text = (
+        "Intelligence reports suggest 'they' have weaponized household dust to destabilize "
+        "our national pride. We must restructure our living rooms for the hygiene-first mandate, "
+        "ensuring every citizen's cleaning habits are optimized for patriotic output."
+    )
+    report = run_pipeline(text)
+    assert report.satire_probability >= 0.35
+    assert "Uncertain" in report.content_type_hint or "Satire" in report.content_type_hint
+
+
 def test_tone_passive_aggressive() -> None:
     """Plausible deniability + obligation modal flags Passive-aggressive."""
     text = (
