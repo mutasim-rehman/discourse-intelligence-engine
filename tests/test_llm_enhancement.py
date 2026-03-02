@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-from discourse_engine.models.report import AssumptionFlag
+from discourse_engine.models.report import AssumptionFlag, TriggerProfile
 from discourse_engine.llm_enhancement import enhance_assumptions, enhance_satire_irony
 
 
@@ -75,3 +75,25 @@ def test_enhance_satire_irony_blends_with_llm() -> None:
         prob, sigs = enhance_satire_irony("Ironic text.", 0.35, [])
         assert prob > 0.35
         assert prob <= 0.95
+
+
+def test_enhance_satire_irony_incongruity_rule_forces_ambiguous() -> None:
+    """High Fear + High Authority + concrete nouns (hair dryer) forces prob into 0.35 for LLM."""
+    trigger = TriggerProfile(fear_level="High", authority_level="High", identity_level="Moderate")
+    text = "The tropospheric containment field failed. We need industrial hair dryers to mitigate."
+    with patch("discourse_engine.llm_enhancement._call_llm") as mock_llm:
+        mock_llm.return_value = "85\nClearly satirical - hair dryers for atmospheric failure."
+        prob, _ = enhance_satire_irony(text, 0.0, [], trigger_profile=trigger)
+        assert mock_llm.called
+        assert prob > 0.5
+
+
+def test_enhance_assumptions_corporate_euphemisms_trigger_llm() -> None:
+    """Corporate terms (initiative, strategic) trigger LLM even without modals."""
+    candidates: list[AssumptionFlag] = []
+    text = "Our Right-Sizing Initiative represents a strategic pivot to streamline the ecosystem."
+    with patch("discourse_engine.llm_enhancement._call_llm") as mock_llm:
+        mock_llm.return_value = "1. Layoffs are acceptable for shareholder value."
+        result = enhance_assumptions(text, candidates)
+        assert mock_llm.called
+        assert len(result) >= 1

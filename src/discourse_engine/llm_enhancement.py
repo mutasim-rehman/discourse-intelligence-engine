@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import re
 
-from discourse_engine.models.report import AssumptionFlag
+from discourse_engine.models.report import AssumptionFlag, TriggerProfile
 
 
 def _call_ollama(prompt: str, model: str = "llama3.2:3b", base_url: str = "http://localhost:11434") -> str | None:
@@ -62,6 +62,15 @@ def _call_llm(
     return None
 
 
+# Value-laden nouns and euphemistic verbs that signal argumentative/corporate discourse
+# even when modals (must, should) are absent (e.g. "Right-Sizing Initiative", "strategic decoupling")
+ARG_SIGNALS_MODALS = ("must", "should", "require", "if ", "therefore", "because")
+ARG_SIGNALS_CORPORATE = (
+    "initiative", "evolution", "transition", "optimizing", "optimize",
+    "strategic", "mission", "streamline", "synergy", "pivot", "decoupling",
+)
+
+
 def enhance_assumptions(
     text: str,
     candidates: list[AssumptionFlag],
@@ -78,12 +87,15 @@ def enhance_assumptions(
     if len(candidates) >= 3:
         return candidates
 
-    # Heuristic: argumentative if modal verbs, conditionals, or value terms
     lower = text.lower()
-    arg_signals = (
-        "must" in lower or "should" in lower or "require" in lower
-        or "if " in lower or "therefore" in lower or "because" in lower
-    )
+    words = set(re.findall(r"\b\w+\b", lower))
+    # Modal/conditional signals
+    arg_signals = any(s in lower for s in ARG_SIGNALS_MODALS)
+    # Corporate euphemism signals (catches "Right-Sizing Initiative", "strategic decoupling", etc.)
+    arg_signals = arg_signals or bool(words & set(ARG_SIGNALS_CORPORATE))
+    # Quiet-agenda rule: long text with 0 structural assumptions may hide subtext
+    if len(candidates) == 0 and len(text.split()) > 50:
+        arg_signals = True
     if not arg_signals:
         return candidates
 
@@ -130,11 +142,20 @@ Assumptions (numbered list or "None"):"""
     return new_flags
 
 
+# Concrete/domestic nouns that signal incongruity when paired with high Fear+Authority
+# (e.g. "hair dryers" as solution to "tropospheric containment failure" → likely satire)
+CONCRETE_ABSURD_NOUNS = frozenset({
+    "hair dryer", "hair dryers", "shovel", "shovels", "towel", "towels",
+    "blow dryer", "blow dryers", "vacuum", "vacuum cleaner",
+})
+
+
 def enhance_satire_irony(
     text: str,
     base_probability: float,
     signals: list,
     *,
+    trigger_profile: TriggerProfile | None = None,
     api_key: str | None = None,
     model: str = "gpt-4",
     ollama_model: str | None = None,
@@ -143,7 +164,18 @@ def enhance_satire_irony(
     """
     Optional LLM check for subtle irony when structural signals are inconclusive.
     Called when satire is 0.2-0.5 and value clash detected.
+
+    Incongruity rule: If Authority=High and Fear=High but text contains concrete
+    domestic nouns (hair dryer, shovel, etc.), force base_prob into 0.35 so the
+    LLM is triggered to adjudicate (avoids "confidence trap" on absurd satire).
     """
+    # Incongruity rule: High Fear + High Authority + absurd concrete nouns
+    # → force into ambiguous zone so LLM adjudicates
+    if trigger_profile and trigger_profile.fear_level == "High" and trigger_profile.authority_level == "High":
+        lower = text.lower()
+        if any(noun in lower for noun in CONCRETE_ABSURD_NOUNS):
+            base_probability = 0.35
+
     if base_probability < 0.2 or base_probability > 0.5:
         return base_probability, signals
 

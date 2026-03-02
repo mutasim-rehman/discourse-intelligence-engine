@@ -29,6 +29,7 @@ def run_pipeline(text: str, config: Config | None = None, context_note: str | No
     satire_prob, satire_signals, content_type = SatireAnalyzer(
         lexicon_dir=config.lexicon_dir
     ).analyze(text)
+    trigger = TriggerProfileAnalyzer(lexicon_dir=config.lexicon_dir).analyze(text)
 
     # Optional LLM enhancement for satire (subtle irony)
     if config.llm_enhance and (config.llm_api_key or config.ollama_model):
@@ -37,6 +38,7 @@ def run_pipeline(text: str, config: Config | None = None, context_note: str | No
             text,
             satire_prob,
             satire_signals,
+            trigger_profile=trigger,
             api_key=config.llm_api_key,
             model=config.llm_model,
             ollama_model=config.ollama_model,
@@ -44,7 +46,6 @@ def run_pipeline(text: str, config: Config | None = None, context_note: str | No
         )
 
     stats = StatisticsAnalyzer().analyze(text)
-    trigger = TriggerProfileAnalyzer(lexicon_dir=config.lexicon_dir).analyze(text)
     tone = ToneAnalyzer().analyze(text)
     modal_pronoun = ModalPronounAnalyzer().analyze(text)
     fallacies = LogicalFallacyAnalyzer().analyze(text)
