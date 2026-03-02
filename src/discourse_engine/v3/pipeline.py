@@ -18,6 +18,16 @@ def run_narrative_arc(text: str, chunk_size: int = 5) -> dict:
         "framing_shifts": [
             {"chunk": c, "framing": f} for c, f in report.dominant_framing_shifts
         ],
+        "logical_leaps": [
+            {
+                "problem_idx": ll.problem_sent_idx,
+                "solution_idx": ll.solution_sent_idx,
+                "similarity": ll.similarity,
+                "problem_snippet": ll.problem_snippet,
+                "solution_snippet": ll.solution_snippet,
+            }
+            for ll in report.logical_leaps
+        ],
         "viz": report.viz_data,
     }
 

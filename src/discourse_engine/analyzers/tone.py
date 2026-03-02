@@ -1,10 +1,22 @@
 """Tone detection analyzer (multi-feature weighted scoring).
 
 Tone is computed from verb intensity, emotional lexicon, imperative density,
-and threat markers — not just single keywords, to reduce false positives.
+threat markers, and plausible-deniability patterns — not just single keywords.
 """
 
 import re
+
+# Plausible deniability: [First Person] + [Epistemic Hedge] + [Negative Polarity]
+# Classic face-saving / guilt-framing: "I'm sure you didn't mean to..."
+PLAUSIBLE_DENIABILITY = re.compile(
+    r"\b(?:I'm|I am|we're|we are|I|we)\s+(?:sure|hope|believe|trust|assume)\s+"
+    r"(?:you|they|he|she|it)\s+(?:didn't|wouldn't|won't|couldn't|shouldn't)\b",
+    re.IGNORECASE,
+)
+OBLIGATION_MODAL = re.compile(
+    r"\b(?:should|must|need\s+to|ought\s+to|have\s+to)\b",
+    re.IGNORECASE,
+)
 
 # Strong urgency: explicit calls to action
 URGENT_STRONG = {"urgent", "immediately", "critical", "crisis", "now", "asap"}
@@ -47,4 +59,7 @@ class ToneAnalyzer:
             tones.append("Defensive")
         if any(w in lower for w in FEAR_ORIENTED):
             tones.append("Fear-oriented")
+        # Passive-aggressive / guilt-framing: plausible deniability + obligation modal
+        if PLAUSIBLE_DENIABILITY.search(text) and OBLIGATION_MODAL.search(text):
+            tones.append("Passive-aggressive")
         return tones

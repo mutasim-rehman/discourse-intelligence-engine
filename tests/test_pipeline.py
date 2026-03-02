@@ -272,3 +272,25 @@ def test_hidden_agenda_emotional_framing() -> None:
     report = run_pipeline(SAMPLE_TEXT)
     agenda_techniques = [f.technique for f in report.hidden_agenda_flags]
     assert "Fear/threat framing" in agenda_techniques
+
+
+def test_hidden_agenda_obscuration() -> None:
+    """Corporate euphemisms (right-sizing, decoupling, etc.) trigger Obscuration."""
+    text = "Our Right-Sizing Initiative and strategic decoupling will optimize human capital."
+    report = run_pipeline(text)
+    obscuration = [f for f in report.hidden_agenda_flags if f.family == "Obscuration"]
+    assert len(obscuration) >= 1
+    techniques = [f.technique for f in obscuration]
+    assert "Personnel Reduction" in techniques or "Objectification of Labor" in techniques
+
+
+def test_tone_passive_aggressive() -> None:
+    """Plausible deniability + obligation modal flags Passive-aggressive."""
+    text = (
+        "I'm sure you didn't mean to exclude the team from the invite. "
+        "It might be worth considering a time-management course if you're overwhelmed, "
+        "so the rest of us don't have to keep covering these oversights. "
+        "You should probably be more careful next time."
+    )
+    report = run_pipeline(text)
+    assert "Passive-aggressive" in report.tone

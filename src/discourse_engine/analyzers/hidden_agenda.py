@@ -141,6 +141,20 @@ DEFAULT_VALUE_TERMS = [
     "innovation", "efficiency", "stability", "integrity", "freedom", "progress", "reform",
 ]
 
+# ---------------------------------------------------------------------------
+# Obscuration: corporate euphemisms that mask real-world actions (high confidence)
+# ---------------------------------------------------------------------------
+OBSCURATION_PATTERNS = (
+    (re.compile(r"\b(?:right-sizing|decoupling|headcount\s+harmonization)\b", re.IGNORECASE),
+     "Personnel Reduction", "Layoffs / Firing", 0.88),
+    (re.compile(r"\b(?:human\s+capital|talent-pool\s+resources?)\b", re.IGNORECASE),
+     "Objectification of Labor", "Dehumanization", 0.85),
+    (re.compile(r"\b(?:bandwidth|availability|synergy)\b", re.IGNORECASE),
+     "Workload Escalation", "Exploitation / Overwork", 0.82),
+    (re.compile(r"\btransitioned\s+to\s+the\s+marketplace\b", re.IGNORECASE),
+     "Euphemistic Termination", "Firing", 0.90),
+)
+
 
 class HiddenAgendaAnalyzer:
     """
@@ -298,6 +312,18 @@ class HiddenAgendaAnalyzer:
                     confidence=0.62,
                 ))
                 break
+
+        # Obscuration: corporate euphemisms (high hidden-agenda confidence)
+        for pat, technique, real_action, conf in OBSCURATION_PATTERNS:
+            m = pat.search(text)
+            if m:
+                flags.append(AgendaFlag(
+                    family="Obscuration",
+                    technique=technique,
+                    pattern_hint=f"obscuring jargon: likely {real_action}",
+                    sentence=_sentence_at(m),
+                    confidence=conf,
+                ))
 
         # Advocating (Layer 2): policy advocacy verbs + value terms
         sentences = split_sentences(text)

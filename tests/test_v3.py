@@ -58,3 +58,16 @@ def test_debate_heatmap_basic() -> None:
     assert report.speakers == ["Alice", "Bob"]
     assert len(report.heatmap_grid) == 2
     assert report.influence_scores["Alice"] >= report.influence_scores["Bob"]
+
+
+def test_narrative_arc_logical_leap() -> None:
+    """Problem (chaos) + Solution (hair dryers) with low similarity = logical leap."""
+    text = (
+        "The tropospheric containment field has failed. "
+        "Global chaos threatens our sidewalks. "
+        "We must authorize a billion-dollar subsidy for industrial hair dryers."
+    )
+    report = NarrativeArcAnalyzer(chunk_size=5).analyze(text)
+    assert len(report.logical_leaps) >= 1
+    ll = report.logical_leaps[0]
+    assert ll.similarity < 0.2

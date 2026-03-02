@@ -13,7 +13,10 @@ import re
 from pathlib import Path
 
 from discourse_engine.utils.text_utils import split_sentences
-from discourse_engine.v3.models import ChunkMetrics, NarrativeArcReport
+from discourse_engine.v3.models import ChunkMetrics, LogicalLeap, NarrativeArcReport
+
+# Similarity threshold: below this = potential satire or logical leap
+LOGICAL_LEAP_SIMILARITY_THRESHOLD = 0.15
 
 
 def _load_lexicon(lexicon_dir: Path, name: str) -> list[str]:
@@ -50,6 +53,34 @@ PASSIVE_PATTERN = re.compile(
     r"\b(?:is|are|was|were|be|been|being)\s+[\w]+ed\b",
     re.IGNORECASE,
 )
+
+# Problem framing: global chaos, crisis, threat (for "Wait, What?" metric)
+PROBLEM_TERMS = frozenset({
+    "chaos", "collapse", "crisis", "threat", "failure", "danger", "disaster",
+    "catastrophe", "destruction", "tyranny", "subsume", "containment",
+})
+# Solution markers: policy verbs, subsidies, proposals
+SOLUTION_TERMS = frozenset({
+    "subsidy", "subsidies", "authorize", "must", "need", "require",
+    "hair dryer", "hair dryers", "shovel", "shovels", "convert", "embrace",
+})
+
+
+def _word_set(text: str) -> set[str]:
+    """Return set of lowercase words (excluding stopwords)."""
+    words = set(re.findall(r"\b[a-z]{2,}\b", text.lower()))
+    # Minimal stopwords
+    stop = {"the", "a", "an", "is", "are", "was", "were", "be", "been", "to", "of", "and", "or", "in", "on", "at"}
+    return words - stop
+
+
+def _cosine_similarity(s1: str, s2: str) -> float:
+    """Bag-of-words cosine similarity between two sentences (0-1)."""
+    w1, w2 = _word_set(s1), _word_set(s2)
+    if not w1 or not w2:
+        return 0.0
+    overlap = len(w1 & w2)
+    return overlap / ((len(w1) * len(w2)) ** 0.5)
 
 
 class NarrativeArcAnalyzer:
@@ -150,6 +181,7 @@ class NarrativeArcAnalyzer:
                 chunks=[],
                 escalation_points=[],
                 dominant_framing_shifts=[],
+                logical_leaps=[],
                 summary="No text to analyze.",
                 viz_data={},
             )
@@ -183,6 +215,38 @@ class NarrativeArcAnalyzer:
                 shifts.append((i, d))
             prev_dom = d
 
+        # "Wait, What?" metric: problem sentence vs solution sentence with low semantic similarity
+        logical_leaps: list[LogicalLeap] = []
+        sentences = split_sentences(text)
+        lower_sents = [s.lower() for s in sentences]
+        for i, sent in enumerate(lower_sents):
+            words_i = set(re.findall(r"\b\w+\b", sent))
+            if not (words_i & PROBLEM_TERMS):
+                continue
+            for j, sent_j in enumerate(lower_sents):
+                if j <= i or j - i > 3:  # solution after problem, within 3 sentences
+                    continue
+                words_j = set(re.findall(r"\b\w+\b", sent_j))
+                has_solution = (
+                    bool(words_j & SOLUTION_TERMS)
+                    or "must" in sent_j
+                    or "need" in sent_j
+                    or "hair dryer" in sent_j
+                    or "hair dryers" in sent_j
+                    or "subsidy" in sent_j
+                )
+                if not has_solution:
+                    continue
+                sim = _cosine_similarity(sentences[i], sentences[j])
+                if sim < LOGICAL_LEAP_SIMILARITY_THRESHOLD:
+                    logical_leaps.append(LogicalLeap(
+                        problem_sent_idx=i,
+                        solution_sent_idx=j,
+                        similarity=sim,
+                        problem_snippet=sentences[i][:80] + ("..." if len(sentences[i]) > 80 else ""),
+                        solution_snippet=sentences[j][:80] + ("..." if len(sentences[j]) > 80 else ""),
+                    ))
+
         summary_parts = [
             f"Analyzed {len(metrics_list)} chunks ({total_sentences} sentences).",
         ]
@@ -190,6 +254,8 @@ class NarrativeArcAnalyzer:
             summary_parts.append(f"Escalation at chunks: {escalation_points}.")
         if shifts:
             summary_parts.append(f"Framing shifts: {len(shifts)} detected.")
+        if logical_leaps:
+            summary_parts.append(f"Logical leaps (potential satire): {len(logical_leaps)}.")
 
         viz_data = {
             "x": [c.position for c in metrics_list],
@@ -199,12 +265,17 @@ class NarrativeArcAnalyzer:
             "identity": [c.identity_score for c in metrics_list],
             "threat": [c.threat_score for c in metrics_list],
             "escalation_points": escalation_points,
+            "logical_leaps": [
+                {"problem_idx": ll.problem_sent_idx, "solution_idx": ll.solution_sent_idx, "similarity": ll.similarity}
+                for ll in logical_leaps
+            ],
         }
 
         return NarrativeArcReport(
             chunks=metrics_list,
             escalation_points=escalation_points,
             dominant_framing_shifts=shifts,
+            logical_leaps=logical_leaps,
             summary=" ".join(summary_parts),
             viz_data=viz_data,
         )

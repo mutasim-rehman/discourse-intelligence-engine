@@ -25,12 +25,24 @@ class ChunkMetrics:
 
 
 @dataclass
+class LogicalLeap:
+    """A problem-solution pair with low semantic coherence (potential satire or non-sequitur)."""
+
+    problem_sent_idx: int
+    solution_sent_idx: int
+    similarity: float
+    problem_snippet: str
+    solution_snippet: str
+
+
+@dataclass
 class NarrativeArcReport:
     """Full narrative arc analysis output."""
 
     chunks: list[ChunkMetrics]
     escalation_points: list[int]  # chunk indices where intensity spikes
     dominant_framing_shifts: list[tuple[int, str]]  # (chunk_idx, framing_type)
+    logical_leaps: list[LogicalLeap]  # problem-solution pairs with low semantic similarity
     summary: str
     viz_data: dict[str, Any] = field(default_factory=dict)
 

@@ -123,6 +123,11 @@ def main() -> None:
             print(f"Escalation at chunks: {arc['escalation_points']}")
         if arc["framing_shifts"]:
             print("Framing shifts:", arc["framing_shifts"])
+        if arc.get("logical_leaps"):
+            for ll in arc["logical_leaps"]:
+                print(f"Logical leap (similarity={ll['similarity']:.2f}):")
+                print(f"  Problem: {ll['problem_snippet']}")
+                print(f"  Solution: {ll['solution_snippet']}")
         if args.export_viz:
             export_viz_to_json(arc["viz"], args.export_viz)
 

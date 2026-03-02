@@ -142,12 +142,36 @@ Assumptions (numbered list or "None"):"""
     return new_flags
 
 
-# Concrete/domestic nouns that signal incongruity when paired with high Fear+Authority
+# Domestic/trivial nouns that signal incongruity when paired with high Authority
 # (e.g. "hair dryers" as solution to "tropospheric containment failure" → likely satire)
-CONCRETE_ABSURD_NOUNS = frozenset({
-    "hair dryer", "hair dryers", "shovel", "shovels", "towel", "towels",
-    "blow dryer", "blow dryers", "vacuum", "vacuum cleaner",
+DOMESTIC_TRIVIAL_NOUNS = frozenset({
+    "hair", "dryer", "dryers", "shovel", "shovels", "towel", "towels",
+    "umbrella", "umbrellas", "raindrop", "raindrops", "vacuum",
 })
+
+
+def _has_domestic_nouns(text: str) -> bool:
+    """Check if text contains domestic/trivial nouns. Uses NLTK POS if available."""
+    lower = text.lower()
+    words = set(re.findall(r"\b\w+\b", lower))
+    if words & DOMESTIC_TRIVIAL_NOUNS:
+        return True
+    # Phrase-level check for multi-word terms
+    for phrase in ("hair dryer", "hair dryers", "blow dryer", "blow dryers", "vacuum cleaner"):
+        if phrase in lower:
+            return True
+    # Optional: use NLTK to extract nouns and cross-reference (more precise)
+    try:
+        import nltk
+        from nltk import pos_tag, word_tokenize
+        nltk.data.find("taggers/averaged_perceptron_tagger")
+    except (ImportError, LookupError):
+        return False
+    tokens = word_tokenize(lower)
+    tagged = pos_tag(tokens)
+    # NN, NNS, NNP, NNPS = nouns
+    nouns = {w.lower() for w, pos in tagged if pos.startswith("NN")}
+    return bool(nouns & DOMESTIC_TRIVIAL_NOUNS)
 
 
 def enhance_satire_irony(
@@ -165,16 +189,15 @@ def enhance_satire_irony(
     Optional LLM check for subtle irony when structural signals are inconclusive.
     Called when satire is 0.2-0.5 and value clash detected.
 
-    Incongruity rule: If Authority=High and Fear=High but text contains concrete
-    domestic nouns (hair dryer, shovel, etc.), force base_prob into 0.35 so the
-    LLM is triggered to adjudicate (avoids "confidence trap" on absurd satire).
+    Incongruity rule: If Authority>0.6 (High) and text contains domestic/trivial
+    nouns (hair dryer, shovel, towel, etc.), subtract 0.3 from base_prob. This
+    pushes "certain 0.7" down to "questionable 0.4" so LLM adjudicates.
     """
-    # Incongruity rule: High Fear + High Authority + absurd concrete nouns
-    # → force into ambiguous zone so LLM adjudicates
-    if trigger_profile and trigger_profile.fear_level == "High" and trigger_profile.authority_level == "High":
-        lower = text.lower()
-        if any(noun in lower for noun in CONCRETE_ABSURD_NOUNS):
-            base_probability = 0.35
+    # Incongruity rule: High Authority + domestic/trivial nouns → subtract 0.3
+    if trigger_profile and trigger_profile.authority_level == "High" and _has_domestic_nouns(text):
+        base_probability = max(0.0, base_probability - 0.3)
+        if base_probability < 0.2:
+            base_probability = 0.35  # Force into ambiguous zone so LLM triggers
 
     if base_probability < 0.2 or base_probability > 0.5:
         return base_probability, signals
