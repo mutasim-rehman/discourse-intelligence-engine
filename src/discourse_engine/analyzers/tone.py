@@ -102,7 +102,11 @@ class ToneAnalyzer:
         # Guilt/Coercive: identity framing + "you" + soft modal + universal/values language
         is_identity_high = bool(trigger_profile and getattr(trigger_profile, "identity_level", "") == "High")
         has_you = bool(pronoun_framing and pronoun_framing.get("you", 0) >= 1)
+        # Soft modal from normalized modal list OR raw text (handles "wouldn't")
         has_soft_modal = bool(modal_verbs and any(m in ("would", "might", "shall") for m in modal_verbs))
+        if not has_soft_modal:
+            if re.search(r"\bwould(?:n't)?\b", lower) or re.search(r"\bmight\b|\bshall\b", lower):
+                has_soft_modal = True
         has_universal_assumption = any(
             "everyone" in (a.description.lower() + " " + a.sentence.lower())
             for a in (hidden_assumptions or [])

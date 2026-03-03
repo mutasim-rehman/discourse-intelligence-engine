@@ -155,6 +155,18 @@ OBSCURATION_PATTERNS = (
      "Euphemistic Termination", "Firing", 0.90),
 )
 
+# Face-threatening politeness: "I'm sure you wouldn't want..." / "We'd hate for you to..."
+FACE_THREATENING_PATTERNS = (
+    re.compile(r"\bI['\u2019]?m\s+sure\s+you\s+wouldn['\u2019]?t\s+want\s+to\b", re.IGNORECASE),
+    re.compile(r"\bwe['\u2019]?d\s+hate\s+for\s+you\s+to\b", re.IGNORECASE),
+)
+
+# Mandatory participation framing: mandatory + abstract virtue/consensus term
+MANDATORY_CONSENSUS_PATTERN = re.compile(
+    r"\bmandatory\b\s+(?:loyalty|pledge|alignment|togetherness|synergy|participation|values?)\b",
+    re.IGNORECASE,
+)
+
 
 class HiddenAgendaAnalyzer:
     """
@@ -312,6 +324,30 @@ class HiddenAgendaAnalyzer:
                     confidence=0.62,
                 ))
                 break
+
+        # Face-threatening acts: polite phrasing that masks blame or threat
+        for pat in FACE_THREATENING_PATTERNS:
+            m = pat.search(text)
+            if m:
+                flags.append(AgendaFlag(
+                    family="Face-threatening act",
+                    technique="Negative politeness threat",
+                    pattern_hint="polite phrasing masking blame ('I'm sure you wouldn't want to...', 'We'd hate for you to...')",
+                    sentence=_sentence_at(m),
+                    confidence=0.80,
+                ))
+                break
+
+        # Coerced consensus: mandatory + abstract virtue/loyalty term
+        m = MANDATORY_CONSENSUS_PATTERN.search(text)
+        if m:
+            flags.append(AgendaFlag(
+                family="Coerced consensus",
+                technique="Mandatory participation framing",
+                pattern_hint="mandatory + abstract virtue (loyalty, values, togetherness)",
+                sentence=_sentence_at(m),
+                confidence=0.82,
+            ))
 
         # Obscuration: corporate euphemisms (high hidden-agenda confidence)
         for pat, technique, real_action, conf in OBSCURATION_PATTERNS:

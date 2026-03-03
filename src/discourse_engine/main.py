@@ -28,8 +28,16 @@ def _apply_bridge_rule(satire_prob: float, logical_leaps: list) -> float:
     return satire_prob
 
 
-def _content_type_from_satire(prob: float) -> str:
-    """Map satire probability to content type hint."""
+def _content_type_from_satire(prob: float, trigger_profile) -> str:
+    """Map satire probability to content type hint, with simple method-of-satire labels."""
+    # High satire + authority/identity framing → likely mocking authoritarianism
+    if (
+        prob >= 0.8
+        and trigger_profile
+        and getattr(trigger_profile, "authority_level", "") in ("Moderate", "High")
+        and getattr(trigger_profile, "identity_level", "") in ("Moderate", "High")
+    ):
+        return "Satire / Mocking Authoritarianism"
     if prob >= 0.5:
         return "Possibly Satire / Hyperbole"
     if prob >= 0.25:
@@ -73,7 +81,7 @@ def run_pipeline(text: str, config: Config | None = None, context_note: str | No
         )
 
     satire_prob = _apply_bridge_rule(satire_prob, logical_leaps)
-    content_type = _content_type_from_satire(satire_prob)
+    content_type = _content_type_from_satire(satire_prob, trigger)
 
     stats = StatisticsAnalyzer().analyze(text)
     modal_pronoun = ModalPronounAnalyzer().analyze(text)
