@@ -109,6 +109,23 @@ HASTY_GENERALIZATION_PATTERNS = [
 # Circular reasoning: conclusion reused as premise
 CIRCULAR_CONNECTORS = re.compile(r"\b(because|since)\b", re.IGNORECASE)
 
+# Slippery slope: escalating chain of consequences
+SLIPPERY_SLOPE_ESCALATION_MARKERS = (
+    "next we'll",
+    "next we will",
+    "eventually",
+    "soon",
+)
+SLIPPERY_SLOPE_EXTREME_TERMS = (
+    "collapse",
+    "crumble",
+    "dark room",
+    "dark, silent nation",
+    "lose our freedom",
+    "death",
+    "at the mercy of foreign powers",
+)
+
 
 def _clause_similarity(left: str, right: str) -> float:
     """Very lightweight bag-of-words similarity for circular reasoning."""
@@ -330,6 +347,27 @@ class LogicalFallacyAnalyzer:
                     )
                 )
                 break
+
+        # Slippery slope via explicit escalation chain in a single sentence
+        for sentence, _start, _end in sentences_with_offsets:
+            lower_sent = sentence.lower()
+            if "if we" not in lower_sent:
+                continue
+            if not any(marker in lower_sent for marker in SLIPPERY_SLOPE_ESCALATION_MARKERS):
+                continue
+            if not any(term in lower_sent for term in SLIPPERY_SLOPE_EXTREME_TERMS):
+                continue
+            conf = fallacy_confidence(0.78, extra_signals=2)
+            flags.append(
+                FallacyFlag(
+                    "Slippery Slope",
+                    "chain of escalating consequences ('if we ... then/next ... eventually ...')",
+                    sentence,
+                    confidence=conf,
+                    fallacy_type="slippery_slope",
+                )
+            )
+            break
 
         # Slippery slope via logical leaps (problem → catastrophic solution with low similarity)
         try:

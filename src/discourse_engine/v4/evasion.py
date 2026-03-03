@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
+from discourse_engine.analyzers.logical_fallacy import LogicalFallacyAnalyzer
 from discourse_engine.v4.models import Dialogue, DialogueTurn, EvasionScore, EvasionSummary
 
 
@@ -72,6 +73,12 @@ class DialogueEvasionAnalyzer:
             # High evasion when there is low semantic overlap AND high hedging.
             base = 1.0 - overlap  # 1 when overlap is 0
             score = max(0.0, min(1.0, 0.6 * base + 0.4 * min(hedge * 2.0, 1.0)))
+
+            # If the answer itself contains a Red Herring fallacy, treat it as strongly evasive,
+            # even when lexical overlap is high (keyword mirroring without addressing the premise).
+            fallacies = LogicalFallacyAnalyzer().analyze(answer_text)
+            if any(getattr(f, "fallacy_type", None) == "red_herring" for f in fallacies):
+                score = max(score, 0.8)
 
             if score < 0.15:
                 continue  # treat very low scores as non-evasive

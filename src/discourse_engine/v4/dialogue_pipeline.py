@@ -16,37 +16,45 @@ from discourse_engine.v4.evasion import DialogueEvasionAnalyzer
 from discourse_engine.v4.power_dynamics import PowerDynamicsAnalyzer
 
 
-SPEAKER_LINE_RE = re.compile(r"^([A-Za-z0-9_.\\- ]+?)\\s*:\\s*(.*\\S.*)$")
+# Specialized splitter for common interview-style transcripts.
+_QA_SPLIT_RE = re.compile(r"(Interviewer|Politician):\s*")
 
 
 def _normalize_speaker_id(label: str) -> str:
     """Create a stable, lowercase speaker id from a display label."""
     base = label.strip().lower()
-    base = re.sub(r"\\s+", "_", base)
+    base = re.sub(r"\s+", "_", base)
     base = re.sub(r"[^a-z0-9_]+", "", base)
     return base or "speaker"
 
 
 def parse_speaker_tagged_text(text: str) -> Dialogue:
     """
-    Parse a simple transcript format into a Dialogue:
+    Parse a simple transcript format into a Dialogue.
 
-    - Each new turn starts with `Speaker: text`.
-    - Lines not matching this pattern are treated as continuation of the previous turn.
+    Primary path (interview-style):
+    - Uses explicit labels like `Interviewer:` and `Politician:` anywhere in the text.
+
+    Fallback path:
+    - Treats each line starting with `Speaker:` as a new turn.
     """
-    lines = text.splitlines()
+    text = text.strip()
     turns: list[DialogueTurn] = []
     profiles: dict[str, SpeakerProfile] = {}
-    current_turn: DialogueTurn | None = None
 
-    for raw in lines:
-        line = raw.rstrip()
-        if not line.strip():
-            continue
+    # --- Primary: interview-style splitter (handles multiple speakers on one long line) ---
+    if "Interviewer:" in text or "Politician:" in text:
+        parts = _QA_SPLIT_RE.split(text)
+        # parts = ["", "Interviewer", "text...", "Politician", "text...", ...]
+        # Skip any leading preamble before the first label.
+        for i in range(1, len(parts), 2):
+            label = parts[i].strip()
+            if i + 1 >= len(parts):
+                continue
+            content = parts[i + 1].strip()
+            if not content:
+                continue
 
-        m = SPEAKER_LINE_RE.match(line)
-        if m:
-            label, content = m.group(1).strip(), m.group(2).strip()
             speaker_id = _normalize_speaker_id(label)
             profile = profiles.get(speaker_id)
             if profile is None:
@@ -54,33 +62,66 @@ def parse_speaker_tagged_text(text: str) -> Dialogue:
                 profiles[speaker_id] = profile
 
             turn_index = len(turns)
-            turn = DialogueTurn(
-                speaker_id=speaker_id,
-                text=content,
-                turn_index=turn_index,
-                display_name=label,
-                role=profile.role,
+            turns.append(
+                DialogueTurn(
+                    speaker_id=speaker_id,
+                    text=content,
+                    turn_index=turn_index,
+                    display_name=label,
+                    role=profile.role,
+                )
             )
-            turns.append(turn)
-            current_turn = turn
-        else:
-            # Continuation of the previous speaker's turn, or anonymous if none yet.
-            if current_turn is None:
-                anon_id = "speaker"
-                if anon_id not in profiles:
-                    profiles[anon_id] = SpeakerProfile(speaker_id=anon_id, display_name=None)
+
+        return Dialogue(turns=turns, speaker_profiles=profiles)
+
+    # --- Fallback: generic "Speaker: text" per line ---
+    lines = text.splitlines()
+    current_turn: DialogueTurn | None = None
+
+    for raw in lines:
+        line = raw.rstrip()
+        if not line.strip():
+            continue
+
+        if ":" in line:
+            label_part, content_part = line.split(":", 1)
+            label = label_part.strip()
+            content = content_part.strip()
+            if label and content:
+                speaker_id = _normalize_speaker_id(label)
+                profile = profiles.get(speaker_id)
+                if profile is None:
+                    profile = SpeakerProfile(speaker_id=speaker_id, display_name=label)
+                    profiles[speaker_id] = profile
+
+                turn_index = len(turns)
                 current_turn = DialogueTurn(
-                    speaker_id=anon_id,
-                    text=line.strip(),
-                    turn_index=0,
-                    display_name=None,
+                    speaker_id=speaker_id,
+                    text=content,
+                    turn_index=turn_index,
+                    display_name=label,
+                    role=profile.role,
                 )
                 turns.append(current_turn)
+                continue
+
+        # Continuation of the previous speaker's turn, or anonymous if none yet.
+        if current_turn is None:
+            anon_id = "speaker"
+            if anon_id not in profiles:
+                profiles[anon_id] = SpeakerProfile(speaker_id=anon_id, display_name=None)
+            current_turn = DialogueTurn(
+                speaker_id=anon_id,
+                text=line.strip(),
+                turn_index=0,
+                display_name=None,
+            )
+            turns.append(current_turn)
+        else:
+            if current_turn.text:
+                current_turn.text += "\n" + line.strip()
             else:
-                if current_turn.text:
-                    current_turn.text += "\\n" + line.strip()
-                else:
-                    current_turn.text = line.strip()
+                current_turn.text = line.strip()
 
     # Normalize turn indices in case we created an anonymous first turn midstream.
     for idx, t in enumerate(turns):
