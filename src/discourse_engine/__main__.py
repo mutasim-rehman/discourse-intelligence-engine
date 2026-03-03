@@ -66,6 +66,11 @@ def main() -> None:
         help="Enable v3 Narrative Arc & Power Dynamics analysis",
     )
     parser.add_argument(
+        "--dialogue",
+        action="store_true",
+        help="Enable v4 dialogue analysis on speaker-tagged transcripts (Speaker: text)",
+    )
+    parser.add_argument(
         "--export-viz",
         metavar="PATH",
         help="Export v3 visualization data to JSON file",
@@ -79,6 +84,11 @@ def main() -> None:
         "--ollama-model",
         metavar="MODEL",
         help="Ollama model for LLM enhancement (e.g. llama3.2:3b)",
+    )
+    parser.add_argument(
+        "--dialogue-json",
+        metavar="PATH",
+        help="Export v4 dialogue analysis to JSON file",
     )
 
     args = parser.parse_args()
@@ -130,6 +140,24 @@ def main() -> None:
                 print(f"  Solution: {ll['solution_snippet']}")
         if args.export_viz:
             export_viz_to_json(arc["viz"], args.export_viz)
+
+    if args.dialogue or args.dialogue_json:
+        from discourse_engine.v4.dialogue_pipeline import (
+            run_dialogue_from_text,
+            dialogue_report_to_dict,
+            format_dialogue_report,
+        )
+        import json
+
+        dialogue_report = run_dialogue_from_text(text)
+        if args.dialogue:
+            print()
+            print(format_dialogue_report(dialogue_report))
+        if args.dialogue_json:
+            data = dialogue_report_to_dict(dialogue_report)
+            with open(args.dialogue_json, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            print(f"\nExported v4 dialogue analysis to {args.dialogue_json}", file=sys.stderr)
 
 
 if __name__ == "__main__":

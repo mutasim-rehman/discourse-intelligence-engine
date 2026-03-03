@@ -20,6 +20,7 @@ class FallacyFlag:
     pattern_hint: str
     sentence: str
     confidence: float = 0.0  # 0-1, how sure we are this is a genuine instance
+    fallacy_type: str | None = None  # optional machine-friendly code, e.g. "circular_reasoning"
 
 
 @dataclass

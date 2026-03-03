@@ -56,3 +56,15 @@ def modal_strength_from_type(detection_type: str) -> float:
 def absence_of_support(has_justification_nearby: bool) -> float:
     """Higher when no evidence/justification in context."""
     return 0.9 if not has_justification_nearby else 0.3
+
+
+def fallacy_confidence(pattern_strength: float, extra_signals: int = 0) -> float:
+    """
+    Lightweight confidence helper for logical fallacies.
+
+    pattern_strength: base confidence in [0, 1] for how diagnostic the pattern is.
+    extra_signals: number of supporting cues (lexical or structural).
+    """
+    bonus = min(max(extra_signals, 0) * 0.05, 0.2)
+    raw = pattern_strength + bonus
+    return min(max(raw, 0.0), 1.0)
