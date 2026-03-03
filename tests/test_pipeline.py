@@ -306,3 +306,21 @@ def test_tone_passive_aggressive() -> None:
     )
     report = run_pipeline(text)
     assert "Passive-aggressive" in report.tone
+
+
+def test_tone_guilt_coercive_and_false_dilemma() -> None:
+    """Weekend shifts guilt-trip is flagged as Guilt/Coercive and False Dilemma."""
+    text = (
+        "I'm sure you'll agree that everyone who truly cares about the success of this project "
+        "has already volunteered for the weekend shifts. It might be helpful for you to reflect "
+        "on why you're the only one who hasn't submitted their commitment form yet, though I'm "
+        "sure you probably just have different priorities than the rest of the team. "
+        "We really want to maintain our reputation as a group of 'high-performers,' so it would "
+        "be a shame if certain individuals' lack of participation started to affect how management "
+        "views our collective output. Shall we just assume you're joining us, or do we need to have "
+        "a more formal conversation about your alignment with our values?"
+    )
+    report = run_pipeline(text)
+    assert "Guilt/Coercive" in report.tone
+    fallacies = [f.name for f in report.logical_fallacy_flags]
+    assert "False Dilemma" in fallacies

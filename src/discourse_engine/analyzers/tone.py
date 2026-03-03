@@ -99,6 +99,25 @@ class ToneAnalyzer:
         ):
             tones.append("Passive-aggressive")
 
+        # Guilt/Coercive: identity framing + "you" + soft modal + universal/values language
+        is_identity_high = bool(trigger_profile and getattr(trigger_profile, "identity_level", "") == "High")
+        has_you = bool(pronoun_framing and pronoun_framing.get("you", 0) >= 1)
+        has_soft_modal = bool(modal_verbs and any(m in ("would", "might", "shall") for m in modal_verbs))
+        has_universal_assumption = any(
+            "everyone" in (a.description.lower() + " " + a.sentence.lower())
+            for a in (hidden_assumptions or [])
+        )
+        guilt_phrases = (
+            "it would be a shame",
+            "only one who hasn't",
+            "alignment with our values",
+            "truly cares",
+            "high-performers",
+        )
+        has_guilt_phrase = any(p in lower for p in guilt_phrases)
+        if is_identity_high and has_you and has_soft_modal and (has_universal_assumption or has_guilt_phrase):
+            tones.append("Guilt/Coercive")
+
         # Corporate/Clinical: word_count > 50, jargon_density > 10% OR 3+ Obscuration flags, fear Low
         if wc > 50 and trigger_profile and trigger_profile.fear_level == "Low":
             obscuration_count = sum(1 for f in (hidden_agenda_flags or []) if getattr(f, "family", "") == "Obscuration")

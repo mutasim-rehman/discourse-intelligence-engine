@@ -56,6 +56,12 @@ def _is_genuine_dichotomy(text: str) -> bool:
         return True
     return False
 
+# Coercive choice: "Shall we X, or do we need to Y?"
+COERCIVE_CHOICE_PATTERN = re.compile(
+    r"\bshall\s+we\s+[^?]+?\s+or\s+do\s+we\s+need\s+to\s+[^?]+\?",
+    re.IGNORECASE,
+)
+
 
 # Appeal to fear: threat language
 FEAR_TERMS = {"collapse", "destroy", "threat", "danger", "catastrophe", "crisis"}
@@ -80,6 +86,15 @@ class LogicalFallacyAnalyzer:
         m = FALSE_DILEMMA_PATTERN.search(text)
         if m and not _is_genuine_dichotomy(text):
             flags.append(FallacyFlag("False Dilemma", "pattern: either X or Y", _sentence_at(m), confidence=0.80))
+
+        m = COERCIVE_CHOICE_PATTERN.search(text)
+        if m:
+            flags.append(FallacyFlag(
+                "False Dilemma",
+                "coercive choice: 'Shall we X, or do we need to Y?'",
+                _sentence_at(m),
+                confidence=0.80,
+            ))
 
         if any(t in lower for t in FEAR_TERMS):
             fear_match = next(
