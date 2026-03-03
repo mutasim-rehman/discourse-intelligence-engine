@@ -124,6 +124,8 @@ SLIPPERY_SLOPE_EXTREME_TERMS = (
     "lose our freedom",
     "death",
     "at the mercy of foreign powers",
+    "pile of rust",
+    "stone age",
 )
 
 

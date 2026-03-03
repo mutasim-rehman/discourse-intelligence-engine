@@ -11,6 +11,98 @@ from discourse_engine.v4.models import Dialogue, DialogueTurn, EvasionScore, Eva
 
 HEDGING = {"perhaps", "maybe", "might", "could", "possibly", "sometimes", "allegedly"}
 QUESTION_WORDS = {"what", "when", "where", "why", "how", "who", "which"}
+STOPWORDS = {
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "but",
+    "if",
+    "then",
+    "than",
+    "that",
+    "this",
+    "these",
+    "those",
+    "for",
+    "from",
+    "with",
+    "about",
+    "into",
+    "onto",
+    "of",
+    "on",
+    "in",
+    "at",
+    "by",
+    "to",
+    "as",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "being",
+    "do",
+    "does",
+    "did",
+    "have",
+    "has",
+    "had",
+    "will",
+    "would",
+    "shall",
+    "should",
+    "can",
+    "could",
+    "may",
+    "might",
+    "must",
+    "just",
+    "only",
+    "also",
+    "even",
+    "very",
+    "really",
+    "so",
+    "such",
+    "up",
+    "out",
+    "over",
+    "under",
+    "again",
+    "more",
+    "most",
+    "some",
+    "any",
+    "all",
+    "no",
+    "not",
+    "own",
+    "same",
+    "other",
+    "another",
+    "i",
+    "you",
+    "he",
+    "she",
+    "it",
+    "we",
+    "they",
+    "me",
+    "him",
+    "her",
+    "us",
+    "them",
+    "my",
+    "your",
+    "his",
+    "its",
+    "our",
+    "their",
+}
 
 
 def _hedging_density(text: str) -> float:
@@ -31,6 +123,13 @@ def _semantic_overlap(text_a: str, text_b: str) -> float:
     return min(overlap, 1.0)
 
 
+def _content_words(text: str) -> set[str]:
+    """Approximate noun/phrase anchors by stripping stopwords and short tokens."""
+    lower = text.lower()
+    tokens = re.findall(r"\b\w{3,}\b", lower)
+    return {t for t in tokens if t not in STOPWORDS}
+
+
 def _is_question(text: str) -> bool:
     stripped = text.strip()
     if not stripped.endswith("?"):
@@ -38,11 +137,27 @@ def _is_question(text: str) -> bool:
     tokens = stripped.split()
     if not tokens:
         return False
-    first = tokens[0].lower()
-    if first in QUESTION_WORDS:
-        return True
-    # Simple auxiliary-led questions: "Do you", "Did they", "Is this", etc.
-    return first in {"do", "did", "is", "are", "can", "could", "will", "would", "should", "shall", "have", "has"}
+    # Look for a question word or auxiliary anywhere (handles vocatives and preambles).
+    for tok in tokens:
+        base = re.sub(r"\W", "", tok).lower()
+        if base in QUESTION_WORDS:
+            return True
+        if base in {
+            "do",
+            "did",
+            "is",
+            "are",
+            "can",
+            "could",
+            "will",
+            "would",
+            "should",
+            "shall",
+            "have",
+            "has",
+        }:
+            return True
+    return False
 
 
 class DialogueEvasionAnalyzer:
@@ -70,9 +185,20 @@ class DialogueEvasionAnalyzer:
             overlap = _semantic_overlap(question_text, answer_text)
             hedge = _hedging_density(answer_text)
 
-            # High evasion when there is low semantic overlap AND high hedging.
+            # Base evasion: low semantic overlap AND high hedging.
             base = 1.0 - overlap  # 1 when overlap is 0
             score = max(0.0, min(1.0, 0.6 * base + 0.4 * min(hedge * 2.0, 1.0)))
+
+            # Noun/phrase (content word) overlap: if the core entities of the question
+            # never appear in the answer, treat it as strongly evasive even when abstract
+            # words (like "transparency") are mirrored.
+            q_content = _content_words(question_text)
+            a_content = _content_words(answer_text)
+            if q_content:
+                shared = q_content & a_content
+                coverage = len(shared) / len(q_content)
+                if coverage < 0.2:
+                    score = max(score, 0.75)
 
             # If the answer itself contains a Red Herring fallacy, treat it as strongly evasive,
             # even when lexical overlap is high (keyword mirroring without addressing the premise).

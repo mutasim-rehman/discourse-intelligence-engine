@@ -124,6 +124,14 @@ class PowerDynamicsAnalyzer:
                 )
             )
 
+        # Normalize dominance/authority so that the most dominant/authoritative speaker ≈ 1.0.
+        if metrics:
+            max_dom = max(m.dominance_score for m in metrics) or 1.0
+            max_auth = max(m.authority_score for m in metrics) or 1.0
+            for m in metrics:
+                m.dominance_score = m.dominance_score / max_dom if max_dom > 0 else 0.0
+                m.authority_score = m.authority_score / max_auth if max_auth > 0 else 0.0
+
         # Sort speakers by dominance descending for readability
         metrics.sort(key=lambda m: m.dominance_score, reverse=True)
 
