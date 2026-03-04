@@ -106,3 +106,19 @@ class DialogueReport:
     evasion: EvasionSummary | None = None
     power_dynamics: PowerDynamicsSummary | None = None
 
+
+@dataclass
+class TopicEntity:
+    """A tracked topical entity (e.g. 'Zurich', '$500 million') and its evasion streak."""
+
+    entity: str
+    consecutive_evasions: int
+
+
+@dataclass
+class TopicTrackerSummary:
+    """Summary of unresolved topical entities across a dialogue."""
+
+    entities: list[TopicEntity]
+    summary: str
+

@@ -10,10 +10,17 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
-from discourse_engine.v4.models import Dialogue, DialogueTurn, SpeakerProfile, DialogueReport
+from discourse_engine.v4.models import (
+    Dialogue,
+    DialogueTurn,
+    SpeakerProfile,
+    DialogueReport,
+)
 from discourse_engine.v4.contradiction import DialogueContradictionAnalyzer
 from discourse_engine.v4.evasion import DialogueEvasionAnalyzer
 from discourse_engine.v4.power_dynamics import PowerDynamicsAnalyzer
+from discourse_engine.v4.topic_tracker import TopicTracker
+from discourse_engine.analyzers.logical_fallacy import LogicalFallacyAnalyzer
 
 
 # Specialized splitter for common interview-style transcripts.
@@ -158,12 +165,16 @@ def run_dialogue_analysis(turns: Iterable[DialogueTurn]) -> DialogueReport:
     contradiction = DialogueContradictionAnalyzer().analyze(dialogue)
     evasion = DialogueEvasionAnalyzer().analyze(dialogue)
     power = PowerDynamicsAnalyzer().analyze(dialogue)
-    return DialogueReport(
+    topics = TopicTracker().analyze(dialogue)
+    report = DialogueReport(
         dialogue=dialogue,
         contradictions=contradiction,
         evasion=evasion,
         power_dynamics=power,
     )
+    # Attach topics via metadata (to avoid changing constructor signature everywhere).
+    report.topics = topics  # type: ignore[attr-defined]
+    return report
 
 
 def run_dialogue_from_text(text: str) -> DialogueReport:
@@ -242,6 +253,18 @@ def dialogue_report_to_dict(report: DialogueReport) -> dict:
             ],
         }
 
+    topics = None
+    # topics field is attached dynamically in run_dialogue_analysis
+    if hasattr(report, "topics") and getattr(report, "topics") is not None:
+        t = getattr(report, "topics")
+        topics = {
+            "summary": t.summary,
+            "entities": [
+                {"entity": e.entity, "consecutive_evasions": e.consecutive_evasions}
+                for e in t.entities
+            ],
+        }
+
     return {
         "dialogue": {
             "speakers": speakers,
@@ -255,6 +278,7 @@ def dialogue_report_to_dict(report: DialogueReport) -> dict:
         else None,
         "evasion": evasion,
         "power_dynamics": power,
+        "topics": topics,
     }
 
 
@@ -303,31 +327,56 @@ def format_dialogue_report(report: DialogueReport) -> str:
             )
         lines.append("")
 
-        # Discourse Profile (tactical signature): per-speaker dominance, evasion, primary tactic
-        lines.append("Discourse Profile:")
-        evasion_by_speaker: dict[str, list[float]] = {}
-        if report.evasion and report.evasion.scores:
-            for s in report.evasion.scores:
-                if s.turn_index < len(dialogue.turns):
-                    spk = dialogue.turns[s.turn_index].speaker_id
-                    evasion_by_speaker.setdefault(spk, []).append(s.score)
-        for m in report.power_dynamics.speakers:
-            avg_evasion = 0.0
-            if m.speaker_id in evasion_by_speaker and evasion_by_speaker[m.speaker_id]:
-                avg_evasion = sum(evasion_by_speaker[m.speaker_id]) / len(evasion_by_speaker[m.speaker_id])
-            tactic = "—"
-            if m.dominance_score >= 0.5 and avg_evasion >= 0.5:
-                tactic = "Evasion / Redefinition"
-            elif m.dominance_score >= 0.5:
-                tactic = "Dominant"
-            elif avg_evasion >= 0.5:
-                tactic = "Evasion"
-            else:
-                tactic = "Fact-based / Questioning"
-            lines.append(
-                f"- {m.speaker_id}: dominance={m.dominance_score:.2f}, "
-                f"evasion={avg_evasion:.2f}, tactic={tactic}"
+    # Topic threading / unresolved entities
+    if hasattr(report, "topics") and getattr(report, "topics") is not None:
+        topics = getattr(report, "topics")
+        lines.append("Topic Threading:")
+        lines.append(f"- {topics.summary}")
+        lines.append("")
+
+    # Discourse Profile (tactical signature): per-speaker dominance, evasion, primary tactic + fallacy habit.
+    lines.append("Discourse Profile:")
+    evasion_by_speaker: dict[str, list[float]] = {}
+    if report.evasion and report.evasion.scores:
+        for s in report.evasion.scores:
+            if s.turn_index < len(dialogue.turns):
+                spk = dialogue.turns[s.turn_index].speaker_id
+                evasion_by_speaker.setdefault(spk, []).append(s.score)
+
+    # Compute fallacy habits per speaker by analyzing each turn's text.
+    fallacy_counts: dict[str, dict[str, int]] = {}
+    for t in dialogue.turns:
+        if not t.text:
+            continue
+        for f in LogicalFallacyAnalyzer().analyze(t.text):
+            ftype = f.fallacy_type or f.name
+            bucket = fallacy_counts.setdefault(t.speaker_id, {})
+            bucket[ftype] = bucket.get(ftype, 0) + 1
+
+    for m in report.power_dynamics.speakers if report.power_dynamics else []:
+        avg_evasion = 0.0
+        if m.speaker_id in evasion_by_speaker and evasion_by_speaker[m.speaker_id]:
+            avg_evasion = sum(evasion_by_speaker[m.speaker_id]) / len(
+                evasion_by_speaker[m.speaker_id]
             )
+        tactic = "Fact-based / Questioning"
+        if m.dominance_score >= 0.5 and avg_evasion >= 0.5:
+            tactic = "Evasion / Redefinition"
+        elif m.dominance_score >= 0.5:
+            tactic = "Dominant"
+        elif avg_evasion >= 0.5:
+            tactic = "Evasion"
+
+        habit = "None detected"
+        counts = fallacy_counts.get(m.speaker_id) or {}
+        if counts:
+            habit_type = max(counts.items(), key=lambda kv: kv[1])[0]
+            habit = habit_type.replace("_", " ")
+
+        lines.append(
+            f"- {m.speaker_id}: dominance={m.dominance_score:.2f}, "
+            f"evasion={avg_evasion:.2f}, tactic={tactic}, fallacy_habit={habit}"
+        )
 
     return "\n".join(lines)
 

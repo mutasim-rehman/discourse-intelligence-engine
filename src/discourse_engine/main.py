@@ -112,6 +112,20 @@ def run_pipeline(text: str, config: Config | None = None, context_note: str | No
         pronoun_framing=modal_pronoun.pronoun_framing,
     )
 
+    # Pragmatic Tone Bridge: let hidden agenda and fallacy signals shape tone.
+    if any(f.family == "Face-threatening act" for f in agenda_flags):
+        if "Coercive/Passive-Aggressive" not in tone:
+            tone.append("Coercive/Passive-Aggressive")
+    if any(f.family == "Obscuration" for f in agenda_flags):
+        if "Clinical/Evasive" not in tone:
+            tone.append("Clinical/Evasive")
+    if any(
+        getattr(ff, "fallacy_type", None) == "appeal_to_fear" or ff.name == "Appeal to Fear"
+        for ff in fallacies
+    ):
+        if "Alarmist" not in tone:
+            tone.append("Alarmist")
+
     return Report(
         word_count=stats[0],
         sentence_count=stats[1],
