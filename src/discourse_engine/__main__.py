@@ -6,6 +6,7 @@ import sys
 
 from discourse_engine import run_pipeline, format_report
 from discourse_engine.models.config import Config
+from discourse_engine.models.report import AgendaFlag
 
 
 def fetch_youtube_transcript(url_or_id: str) -> tuple[str, str | None]:
@@ -120,9 +121,11 @@ def main() -> None:
     )
     report = run_pipeline(text, config=config, context_note=context_note)
 
-    # When --dialogue: promote per-turn fallacy flags into the main report so they appear in Logical Fallacy Flags.
+    # When --dialogue: promote per-turn fallacy flags into the main report so they appear in Logical Fallacy Flags,
+    # and synthesize intentional-evasion agenda flags for repeatedly dodged entities.
     if args.dialogue or args.dialogue_json:
         from discourse_engine.v4.dialogue_pipeline import parse_speaker_tagged_text
+        from discourse_engine.v4.topic_tracker import TopicTracker
         from discourse_engine.analyzers.logical_fallacy import LogicalFallacyAnalyzer
 
         try:
@@ -135,6 +138,24 @@ def main() -> None:
                     if key not in existing_sentences:
                         existing_sentences.add(key)
                         report.logical_fallacy_flags.append(flag)
+
+            # Topic escalation: if key entities are dodged multiple times, flag Intentional Topic Suppression.
+            topics = TopicTracker().analyze(dialogue)
+            for ent in topics.entities:
+                if ent.consecutive_evasions >= 2:
+                    pattern_hint = (
+                        f"entity '{ent.entity}' repeatedly raised but not substantively addressed "
+                        f"({ent.consecutive_evasions} consecutive evasions)"
+                    )
+                    report.hidden_agenda_flags.append(
+                        AgendaFlag(
+                            family="Intentional evasion",
+                            technique="Topic suppression",
+                            pattern_hint=pattern_hint,
+                            sentence=topics.summary,
+                            confidence=0.80,
+                        )
+                    )
         except Exception:
             pass
 
