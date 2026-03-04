@@ -51,7 +51,7 @@ BANDWAGON_PATTERNS = [
     ),
 ]
 
-# Straw man: misreporting an opponent's view then knocking it down
+# Straw man: misreporting or re-framing an opponent's view then knocking it down
 STRAW_MAN_PATTERNS = [
     re.compile(
         r"\b(my|our)\s+opponent\s+(?:says|claims|argues)\b.*?\bbut\b",
@@ -64,6 +64,16 @@ STRAW_MAN_PATTERNS = [
     re.compile(
         r"\bsome\s+people\s+(?:say|claim|believe)\b.*?\bbut\b",
         re.IGNORECASE | re.DOTALL,
+    ),
+    # "By calling it X, you are saying Y" → re-frame critic's wording into an extreme stance.
+    re.compile(
+        r"\bby\s+calling\s+(?:it|this)\s+[^,]+,\s+you\s+are\s+(?:essentially\s+)?saying\b",
+        re.IGNORECASE,
+    ),
+    # "What it actually is, is ..." → rebrand the criticized object into a noble-sounding one.
+    re.compile(
+        r"\bwhat\s+it\s+actually\s+is,\s+is\b",
+        re.IGNORECASE,
     ),
 ]
 
@@ -272,7 +282,7 @@ class LogicalFallacyAnalyzer:
                 flags.append(
                     FallacyFlag(
                         "Straw Man",
-                        "opponent's view paraphrased then rejected ('X says that..., but ...')",
+                        "opponent's view re-framed then rejected (e.g. 'X says that..., but ...' or 'By calling it X you are saying Y')",
                         _sentence_at(m),
                         confidence=conf,
                         fallacy_type="straw_man",
