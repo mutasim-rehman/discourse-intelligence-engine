@@ -91,6 +91,11 @@ def main() -> None:
         metavar="PATH",
         help="Export v4 dialogue analysis to JSON file",
     )
+    parser.add_argument(
+        "--v5-map-json",
+        metavar="PATH",
+        help="Export V5 discourse map (semantic graph) to JSON file",
+    )
 
     args = parser.parse_args()
 
@@ -198,6 +203,14 @@ def main() -> None:
             with open(args.dialogue_json, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
             print(f"\nExported v4 dialogue analysis to {args.dialogue_json}", file=sys.stderr)
+
+    if args.v5_map_json:
+        from discourse_engine.v5.scene_detector import build_v5_discourse_map
+        from discourse_engine.v5.visualization import export_discourse_map
+
+        result = build_v5_discourse_map(text, document_id="doc:0")
+        export_discourse_map(result.discourse_map, args.v5_map_json)
+        print(f"\nExported v5 discourse map to {args.v5_map_json}", file=sys.stderr)
 
 
 if __name__ == "__main__":
