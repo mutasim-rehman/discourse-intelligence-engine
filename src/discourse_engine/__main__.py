@@ -119,6 +119,25 @@ def main() -> None:
         llm_api_key=os.environ.get("OPENAI_API_KEY") if args.llm_enhance else None,
     )
     report = run_pipeline(text, config=config, context_note=context_note)
+
+    # When --dialogue: promote per-turn fallacy flags into the main report so they appear in Logical Fallacy Flags.
+    if args.dialogue or args.dialogue_json:
+        from discourse_engine.v4.dialogue_pipeline import parse_speaker_tagged_text
+        from discourse_engine.analyzers.logical_fallacy import LogicalFallacyAnalyzer
+
+        try:
+            dialogue = parse_speaker_tagged_text(text)
+            existing_sentences = {f.sentence.strip().lower()[:200] for f in report.logical_fallacy_flags}
+            for turn in dialogue.turns:
+                turn_flags = LogicalFallacyAnalyzer().analyze(turn.text or "")
+                for flag in turn_flags:
+                    key = flag.sentence.strip().lower()[:200]
+                    if key not in existing_sentences:
+                        existing_sentences.add(key)
+                        report.logical_fallacy_flags.append(flag)
+        except Exception:
+            pass
+
     print()
     print(format_report(report))
 

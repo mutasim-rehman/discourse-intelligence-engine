@@ -301,6 +301,33 @@ def format_dialogue_report(report: DialogueReport) -> str:
                 f"authority={m.authority_score:.2f}, "
                 f"turns={m.total_turns}, interruptions={m.interruption_count}"
             )
+        lines.append("")
+
+        # Discourse Profile (tactical signature): per-speaker dominance, evasion, primary tactic
+        lines.append("Discourse Profile:")
+        evasion_by_speaker: dict[str, list[float]] = {}
+        if report.evasion and report.evasion.scores:
+            for s in report.evasion.scores:
+                if s.turn_index < len(dialogue.turns):
+                    spk = dialogue.turns[s.turn_index].speaker_id
+                    evasion_by_speaker.setdefault(spk, []).append(s.score)
+        for m in report.power_dynamics.speakers:
+            avg_evasion = 0.0
+            if m.speaker_id in evasion_by_speaker and evasion_by_speaker[m.speaker_id]:
+                avg_evasion = sum(evasion_by_speaker[m.speaker_id]) / len(evasion_by_speaker[m.speaker_id])
+            tactic = "—"
+            if m.dominance_score >= 0.5 and avg_evasion >= 0.5:
+                tactic = "Evasion / Redefinition"
+            elif m.dominance_score >= 0.5:
+                tactic = "Dominant"
+            elif avg_evasion >= 0.5:
+                tactic = "Evasion"
+            else:
+                tactic = "Fact-based / Questioning"
+            lines.append(
+                f"- {m.speaker_id}: dominance={m.dominance_score:.2f}, "
+                f"evasion={avg_evasion:.2f}, tactic={tactic}"
+            )
 
     return "\n".join(lines)
 

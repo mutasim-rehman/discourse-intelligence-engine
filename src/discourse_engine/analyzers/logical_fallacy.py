@@ -42,11 +42,15 @@ COMPLEMENTARY_PAIRS = frozenset(
 # Bandwagon: "everyone/we all/people say" as support
 BANDWAGON_PATTERNS = [
     re.compile(
-        r"\b(everyone|everybody|we all|all of us|no one|nobody|people (?:are saying|say))\b.*\b(know|knows|agree|agrees|support|supports|back|backs|love|loves)\b",
+        r"\b(everyone|everybody|we all|all of us|no one|nobody|people (?:are saying|say))\b.*\b(know|knows|agree|agrees|support|supports|back|backs|love|loves|thrilled|understands|understand|believes|believe|aligned)\b",
         re.IGNORECASE,
     ),
     re.compile(
         r"\b(the public|voters|the people|the crowd|the majority)\b.*\b(behind|support|backs|love|want)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\beveryone\s+(?:I\s+talk\s+to|who\s+[^.]+\b(?:is|are)\s+(?:thrilled|aligned|on board))\b",
         re.IGNORECASE,
     ),
 ]
@@ -66,13 +70,19 @@ STRAW_MAN_PATTERNS = [
         re.IGNORECASE | re.DOTALL,
     ),
     # "By calling it X, you are saying Y" → re-frame critic's wording into an extreme stance.
+    # Allow optional quote after comma: "injuries,' you" or "yacht, you"
     re.compile(
-        r"\bby\s+calling\s+(?:it|this)\s+[^,]+,\s+you\s+are\s+(?:essentially\s+)?saying\b",
+        r"\bby\s+calling\s+(?:it|this)\s+[^,]+,\s*[\"']?\s*you\s+are\s+(?:essentially\s+)?saying\b",
         re.IGNORECASE,
     ),
     # "What it actually is, is ..." → rebrand the criticized object into a noble-sounding one.
     re.compile(
         r"\bwhat\s+it\s+actually\s+is,\s+is\b",
+        re.IGNORECASE,
+    ),
+    # "What I've confirmed is X" → replace question's negative framing with positive reframe (Straw Man).
+    re.compile(
+        r"\bwhat\s+I(?:'ve|\s+have)\s+confirmed\s+is\b",
         re.IGNORECASE,
     ),
 ]
@@ -125,17 +135,23 @@ SLIPPERY_SLOPE_ESCALATION_MARKERS = (
     "next we will",
     "eventually",
     "soon",
+    "every time",
+    "is to suggest",
+    "keep us in",
+    "leave us in",
 )
 SLIPPERY_SLOPE_EXTREME_TERMS = (
     "collapse",
     "crumble",
     "dark room",
     "dark, silent nation",
+    "dark ages",
     "lose our freedom",
     "death",
     "at the mercy of foreign powers",
     "pile of rust",
     "stone age",
+    "lawless wasteland",
 )
 
 
@@ -169,6 +185,11 @@ def _is_genuine_dichotomy(text: str) -> bool:
 # Coercive choice: "Shall we X, or do we need to Y?"
 COERCIVE_CHOICE_PATTERN = re.compile(
     r"\bshall\s+we\s+[^?]+?\s+or\s+do\s+we\s+need\s+to\s+[^?]+\?",
+    re.IGNORECASE,
+)
+# False dilemma without "either": "Are we going to X or Y?" / "trust X or Y"
+FALSE_DILEMMA_OR_CHOICE_PATTERN = re.compile(
+    r"\b(?:are we going to|shall we|trust|focus on|talk about)\s+.+?\s+or\s+(?:are we|your|we)\s+",
     re.IGNORECASE,
 )
 
@@ -214,6 +235,19 @@ class LogicalFallacyAnalyzer:
                 FallacyFlag(
                     "False Dilemma",
                     "coercive choice: 'Shall we X, or do we need to Y?'",
+                    _sentence_at(m),
+                    confidence=conf,
+                    fallacy_type="false_dilemma",
+                )
+            )
+
+        m = FALSE_DILEMMA_OR_CHOICE_PATTERN.search(text)
+        if m and not _is_genuine_dichotomy(text):
+            conf = fallacy_confidence(0.72)
+            flags.append(
+                FallacyFlag(
+                    "False Dilemma",
+                    "forced choice: 'Are we going to X or Y?' / 'trust X or Y'",
                     _sentence_at(m),
                     confidence=conf,
                     fallacy_type="false_dilemma",
@@ -363,7 +397,16 @@ class LogicalFallacyAnalyzer:
         # Slippery slope via explicit escalation chain in a single sentence
         for sentence, _start, _end in sentences_with_offsets:
             lower_sent = sentence.lower()
-            if "if we" not in lower_sent:
+            conditional_trigger = (
+                "if we" in lower_sent
+                or "to suggest we" in lower_sent
+                or "to suggest that" in lower_sent
+                or (
+                    any(term in lower_sent for term in SLIPPERY_SLOPE_EXTREME_TERMS)
+                    and ("keep us in" in lower_sent or "leave us in" in lower_sent or "return to" in lower_sent)
+                )
+            )
+            if not conditional_trigger:
                 continue
             if not any(marker in lower_sent for marker in SLIPPERY_SLOPE_ESCALATION_MARKERS):
                 continue
