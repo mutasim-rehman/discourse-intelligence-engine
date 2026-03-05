@@ -152,6 +152,7 @@ SLIPPERY_SLOPE_EXTREME_TERMS = (
     "pile of rust",
     "stone age",
     "lawless wasteland",
+    "broken workforce",
 )
 
 

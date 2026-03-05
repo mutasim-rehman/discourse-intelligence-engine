@@ -119,6 +119,9 @@ def main() -> None:
         print("No text provided.", file=sys.stderr)
         sys.exit(1)
 
+    # Optional v4 dialogue report, reused across promotion + pretty-print.
+    dialogue_report = None
+
     config = Config(
         llm_enhance=args.llm_enhance,
         ollama_model=args.ollama_model,
@@ -126,16 +129,24 @@ def main() -> None:
     )
     report = run_pipeline(text, config=config, context_note=context_note)
 
-    # When --dialogue: promote per-turn fallacy flags into the main report so they appear in Logical Fallacy Flags,
-    # and synthesize intentional-evasion agenda flags for repeatedly dodged entities.
+    # When --dialogue: promote v4 insights (fallacies, evasion, topic threading)
+    # into the main report so they appear in Logical Fallacy Flags, Hidden Agenda,
+    # and Tone.
     if args.dialogue or args.dialogue_json:
-        from discourse_engine.v4.dialogue_pipeline import parse_speaker_tagged_text
+        from discourse_engine.v4.dialogue_pipeline import (
+            run_dialogue_from_text,
+        )
         from discourse_engine.v4.topic_tracker import TopicTracker
         from discourse_engine.analyzers.logical_fallacy import LogicalFallacyAnalyzer
 
         try:
-            dialogue = parse_speaker_tagged_text(text)
-            existing_sentences = {f.sentence.strip().lower()[:200] for f in report.logical_fallacy_flags}
+            dialogue_report = run_dialogue_from_text(text)
+            dialogue = dialogue_report.dialogue
+
+            # Promote per-turn fallacy flags into the main report so they appear in Logical Fallacy Flags.
+            existing_sentences = {
+                f.sentence.strip().lower()[:200] for f in report.logical_fallacy_flags
+            }
             for turn in dialogue.turns:
                 turn_flags = LogicalFallacyAnalyzer().analyze(turn.text or "")
                 for flag in turn_flags:
@@ -144,12 +155,12 @@ def main() -> None:
                         existing_sentences.add(key)
                         report.logical_fallacy_flags.append(flag)
 
-            # Topic escalation: if key entities are dodged multiple times, flag Intentional Topic Suppression.
+            # Topic escalation: if key entities are dodged and never resolved, flag Intentional Topic Suppression.
             topics = TopicTracker().analyze(dialogue)
             for ent in topics.entities:
-                if ent.consecutive_evasions >= 2:
+                if ent.consecutive_evasions >= 1:
                     pattern_hint = (
-                        f"entity '{ent.entity}' repeatedly raised but not substantively addressed "
+                        f"entity '{ent.entity}' raised but not substantively addressed "
                         f"({ent.consecutive_evasions} consecutive evasions)"
                     )
                     report.hidden_agenda_flags.append(
@@ -161,7 +172,27 @@ def main() -> None:
                             confidence=0.80,
                         )
                     )
+
+            # High evasion across the dialogue → surface as tone + agenda signal.
+            if (
+                dialogue_report.evasion
+                and dialogue_report.evasion.aggregate_score >= 0.6
+            ):
+                if "Evasive" not in report.tone:
+                    report.tone.append("Evasive")
+                # Attach a coarse-grained agenda flag if not already present.
+                summary = dialogue_report.evasion.summary or "High evasion across answers."
+                report.hidden_agenda_flags.append(
+                    AgendaFlag(
+                        family="Intentional evasion",
+                        technique="Answer reframing / non-answer",
+                        pattern_hint=summary,
+                        sentence=summary,
+                        confidence=0.75,
+                    )
+                )
         except Exception:
+            # Dialogue analysis is best-effort; do not fail the base report.
             pass
 
     print()
@@ -194,7 +225,10 @@ def main() -> None:
         )
         import json
 
-        dialogue_report = run_dialogue_from_text(text)
+        # Reuse the dialogue report computed above when available.
+        if dialogue_report is None:
+            dialogue_report = run_dialogue_from_text(text)
+
         if args.dialogue:
             print()
             print(format_dialogue_report(dialogue_report))
