@@ -8,7 +8,7 @@ This module provides:
 from __future__ import annotations
 
 import re
-from typing import Iterable
+from typing import Iterable, Optional
 
 from discourse_engine.v4.models import (
     Dialogue,
@@ -26,6 +26,11 @@ from discourse_engine.analyzers.logical_fallacy import LogicalFallacyAnalyzer
 # Specialized splitter for common interview-style transcripts.
 _QA_SPLIT_RE = re.compile(r"(Interviewer|Politician):\s*")
 
+# Multi-speaker: any "Name: " where Name is one or more capitalized words.
+_MULTISPEAKER_LABEL_RE = re.compile(
+    r"([A-Z][A-Za-z0-9]*(?:\s+[A-Z][A-Za-z0-9]*)*):\s*"
+)
+
 
 def _normalize_speaker_id(label: str) -> str:
     """Create a stable, lowercase speaker id from a display label."""
@@ -35,19 +40,74 @@ def _normalize_speaker_id(label: str) -> str:
     return base or "speaker"
 
 
+def _parse_multispeaker_inline(text: str) -> Optional[Dialogue]:
+    """
+    Split text by any "Name: " pattern (Name = capitalized word(s)) so that
+    single-line input like "Manager A: ... CEO: ... Manager B: ..." yields
+    multiple turns. Returns None if fewer than two speaker tags found.
+    """
+    text = text.strip()
+    if not text:
+        return None
+
+    matches: list[tuple[int, int, str]] = []  # (start, end, label)
+    for m in _MULTISPEAKER_LABEL_RE.finditer(text):
+        preceding = text[: m.start()].rstrip()
+        if not preceding or preceding[-1] in ".\n!?":
+            label = m.group(1).strip()
+            if label:
+                matches.append((m.start(), m.end(), label))
+
+    if len(matches) < 2:
+        return None
+
+    turns_list: list[DialogueTurn] = []
+    profiles: dict[str, SpeakerProfile] = {}
+
+    for i, (_start, end, label) in enumerate(matches):
+        content_start = end
+        content_end = matches[i + 1][0] if i + 1 < len(matches) else len(text)
+        content = text[content_start:content_end].strip()
+        if not content:
+            continue
+
+        speaker_id = _normalize_speaker_id(label)
+        if speaker_id not in profiles:
+            profiles[speaker_id] = SpeakerProfile(speaker_id=speaker_id, display_name=label)
+
+        turn_index = len(turns_list)
+        turns_list.append(
+            DialogueTurn(
+                speaker_id=speaker_id,
+                text=content,
+                turn_index=turn_index,
+                display_name=label,
+                role=profiles[speaker_id].role,
+            )
+        )
+
+    if not turns_list:
+        return None
+
+    return Dialogue(turns=turns_list, speaker_profiles=profiles)
+
+
 def parse_speaker_tagged_text(text: str) -> Dialogue:
     """
     Parse a simple transcript format into a Dialogue.
 
-    Primary path (interview-style):
-    - Uses explicit labels like `Interviewer:` and `Politician:` anywhere in the text.
-
-    Fallback path:
-    - Treats each line starting with `Speaker:` as a new turn.
+    First: multi-speaker inline (any "Name: " in text, works without newlines).
+    Then: interview-style (Interviewer/Politician).
+    Fallback: line-by-line "Label: content".
     """
     text = text.strip()
     turns: list[DialogueTurn] = []
     profiles: dict[str, SpeakerProfile] = {}
+
+    # --- First: multi-speaker normalizer (CEO:, Manager A:, Minister Vance:, etc.) ---
+    multispeaker = _parse_multispeaker_inline(text)
+    if multispeaker is not None and len(multispeaker.turns) >= 2:
+        return multispeaker
 
     # --- Primary: interview-style splitter (handles multiple speakers on one long line) ---
     if "Interviewer:" in text or "Politician:" in text:

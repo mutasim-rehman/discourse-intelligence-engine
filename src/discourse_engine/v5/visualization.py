@@ -18,10 +18,11 @@ def social_graph_view(dm: DiscourseMap) -> Dict[str, Any]:
     """Return a simplified social graph view over speakers.
 
     Nodes: speakers with basic metadata.
-    Edges: co-occurrence edges between speakers, aggregated across scenes.
+    Edges: co-occurrence edges. Alliances: aligns_with (e.g. "I agree with X").
     """
     nodes = []
     edges: Dict[tuple[str, str], float] = {}
+    alliances: list[Dict[str, Any]] = []
 
     for node_id, node in dm.nodes.items():
         if node.kind == "speaker":
@@ -34,10 +35,16 @@ def social_graph_view(dm: DiscourseMap) -> Dict[str, Any]:
             )
 
     for edge in dm.edges:
-        if edge.kind != "co_occurs_in_scene":
-            continue
-        key = (edge.source, edge.target)
-        edges[key] = edges.get(key, 0.0) + edge.weight
+        if edge.kind == "co_occurs_in_scene":
+            key = (edge.source, edge.target)
+            edges[key] = edges.get(key, 0.0) + edge.weight
+        elif edge.kind == "aligns_with":
+            alliances.append({
+                "source": edge.source,
+                "target": edge.target,
+                "weight": edge.weight,
+                "metadata": edge.metadata,
+            })
 
     edge_list = [
         {"source": src, "target": tgt, "weight": weight}
@@ -47,6 +54,7 @@ def social_graph_view(dm: DiscourseMap) -> Dict[str, Any]:
     return {
         "nodes": nodes,
         "edges": edge_list,
+        "alliances": alliances,
     }
 
 

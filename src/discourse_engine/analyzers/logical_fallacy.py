@@ -70,9 +70,13 @@ STRAW_MAN_PATTERNS = [
         re.IGNORECASE | re.DOTALL,
     ),
     # "By calling it X, you are saying Y" → re-frame critic's wording into an extreme stance.
-    # Allow optional quote after comma: "injuries,' you" or "yacht, you"
     re.compile(
         r"\bby\s+calling\s+(?:it|this)\s+[^,]+,\s*[\"']?\s*you\s+are\s+(?:essentially\s+)?saying\b",
+        re.IGNORECASE,
+    ),
+    # "By focusing on X, you are essentially saying Y" → reframe critic's concern into extreme stance.
+    re.compile(
+        r"\bby\s+(?:focusing|fixating)\s+on\s+[^,]+,\s*you\s+are\s+(?:essentially\s+)?saying\b",
         re.IGNORECASE,
     ),
     # "What it actually is, is ..." → rebrand the criticized object into a noble-sounding one.
