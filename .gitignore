@@ -71,6 +71,9 @@ Thumbs.db
 # Jupyter Notebook
 .ipynb_checkpoints
 
+# Analysis / export artifacts
+exports/
+
 # mypy
 .mypy_cache/
 .dmypy.json

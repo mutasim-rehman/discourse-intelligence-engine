@@ -99,6 +99,19 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    def _resolve_export_path(path: str) -> str:
+        """Put export artifacts into 'exports/' by default when no folder is given."""
+        if not path:
+            return path
+        directory = os.path.dirname(path)
+        if not directory:
+            directory = "exports"
+            full = os.path.join(directory, path)
+        else:
+            full = path
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        return full
+
     context_note: str | None = None
     if args.youtube:
         try:
@@ -215,7 +228,8 @@ def main() -> None:
                 print(f"  Problem: {ll['problem_snippet']}")
                 print(f"  Solution: {ll['solution_snippet']}")
         if args.export_viz:
-            export_viz_to_json(arc["viz"], args.export_viz)
+            export_path = _resolve_export_path(args.export_viz)
+            export_viz_to_json(arc["viz"], export_path)
 
     if args.dialogue or args.dialogue_json:
         from discourse_engine.v4.dialogue_pipeline import (
@@ -234,17 +248,19 @@ def main() -> None:
             print(format_dialogue_report(dialogue_report))
         if args.dialogue_json:
             data = dialogue_report_to_dict(dialogue_report)
-            with open(args.dialogue_json, "w", encoding="utf-8") as f:
+            export_path = _resolve_export_path(args.dialogue_json)
+            with open(export_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
-            print(f"\nExported v4 dialogue analysis to {args.dialogue_json}", file=sys.stderr)
+            print(f"\nExported v4 dialogue analysis to {export_path}", file=sys.stderr)
 
     if args.v5_map_json:
         from discourse_engine.v5.scene_detector import build_v5_discourse_map
         from discourse_engine.v5.visualization import export_discourse_map
 
         result = build_v5_discourse_map(text, document_id="doc:0")
-        export_discourse_map(result.discourse_map, args.v5_map_json)
-        print(f"\nExported v5 discourse map to {args.v5_map_json}", file=sys.stderr)
+        export_path = _resolve_export_path(args.v5_map_json)
+        export_discourse_map(result.discourse_map, export_path)
+        print(f"\nExported v5 discourse map to {export_path}", file=sys.stderr)
 
 
 if __name__ == "__main__":
