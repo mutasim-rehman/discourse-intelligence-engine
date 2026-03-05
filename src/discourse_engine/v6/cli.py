@@ -25,6 +25,7 @@ from discourse_engine.v5.models import DiscourseMap
 from discourse_engine.v5.library import build_library_map
 from discourse_engine.v5.scene_detector import build_v5_discourse_map
 from discourse_engine.v5.visualization import export_discourse_map
+from discourse_engine.v6.aggregator import export_library_persona_report
 
 
 def fetch_youtube_transcript(url_or_id: str) -> tuple[str, str | None]:
@@ -84,6 +85,20 @@ def _resolve_v5_export_path(args: argparse.Namespace, *, default_prefix: str) ->
     if getattr(args, "export", False):
         name = _default_v5_export_name(prefix=default_prefix)
         return _resolve_export_path(name)
+    return None
+
+
+def _resolve_library_report_path(
+    args: argparse.Namespace,
+    *,
+    default_dir_from_v5: str | None,
+) -> str | None:
+    """Resolve the path for the library persona report."""
+    explicit = getattr(args, "library_report_json", None)
+    if explicit:
+        return _resolve_export_path(explicit)
+    if default_dir_from_v5:
+        return os.path.join(default_dir_from_v5, "library_report.json")
     return None
 
 
@@ -162,6 +177,11 @@ def add_analyze_subparser(subparsers: argparse._SubParsersAction[argparse.Argume
         help="Export V5 discourse map (semantic graph) to JSON file.",
     )
     analyze.add_argument(
+        "--library-report-json",
+        metavar="PATH",
+        help="Export cross-document library persona report to JSON (batch mode).",
+    )
+    analyze.add_argument(
         "--export",
         action="store_true",
         help=(
@@ -218,9 +238,12 @@ def run_analyze_from_args(args: argparse.Namespace) -> int:
             return 1
 
         library_map = run_batch_analyze(folder, args)
+
         export_path = _resolve_v5_export_path(args, default_prefix="v5_library_map")
+        export_dir: str | None = None
         if export_path:
             export_discourse_map(library_map, export_path)
+            export_dir = os.path.dirname(export_path)
             print(
                 f"\nExported v5 library discourse map to {export_path}",
                 file=sys.stderr,
@@ -232,6 +255,19 @@ def run_analyze_from_args(args: argparse.Namespace) -> int:
                 "(no export path provided).",
                 file=sys.stderr,
             )
+
+        # Library Persona Engine: emit a library_report.json alongside the map
+        # or into the default exports/ directory when no map export is requested.
+        library_report_path = _resolve_library_report_path(
+            args, default_dir_from_v5=export_dir or "exports"
+        )
+        if library_report_path:
+            export_library_persona_report(library_map, library_report_path)
+            print(
+                f"Exported library persona report to {library_report_path}",
+                file=sys.stderr,
+            )
+
         return 0
 
     # Single-document mode.
