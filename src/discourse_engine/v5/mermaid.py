@@ -2,7 +2,7 @@
 
 Usage (from repo root):
 
-    py -m discourse_engine.v5.mermaid exports/social_audit.json > social_audit.mmd
+    py -m discourse_engine.v5.mermaid exports/social_audit.json > exports/social_audit.mmd
 
 This reads a v5-map JSON export and emits a Mermaid graph describing:
 - Speaker nodes.

@@ -1,266 +1,42 @@
-"""CLI entry point: interactive text input, YouTube video, or piped input."""
+"""Top-level CLI entry point for the Discourse Intelligence Engine.
+
+V6 introduces a subcommand-based architecture. The primary entry point is:
+
+    discourse-engine analyze ...
+
+which is implemented in ``discourse_engine.v6.cli``.
+"""
 
 import argparse
-import os
 import sys
 
-from discourse_engine import run_pipeline, format_report
-from discourse_engine.models.config import Config
-from discourse_engine.models.report import AgendaFlag
+from discourse_engine.v6.cli import add_analyze_subparser
 
 
-def fetch_youtube_transcript(url_or_id: str) -> tuple[str, str | None]:
-    """Fetch transcript from a YouTube video URL or video ID. Returns (text, context_note)."""
-    from discourse_engine.utils.youtube import fetch_transcript
-
-    return fetch_transcript(url_or_id)
-
-
-def read_text_interactive() -> str:
-    """Read multi-line text from stdin. Empty line ends input."""
-    print("Enter text to analyze (blank line when done):")
-    print("-" * 40)
-    lines: list[str] = []
-    while True:
-        try:
-            line = input()
-        except EOFError:
-            break
-        if line == "" and lines:
-            break
-        if line == "":
-            continue
-        lines.append(line)
-    return "\n".join(lines) if lines else ""
-
-
-def read_text_piped() -> str:
-    """Read all text from stdin (for piping)."""
-    return sys.stdin.read()
-
-
-def main() -> None:
-    """Prompt for text, run pipeline, print report."""
+def main(argv: list[str] | None = None) -> None:
+    """Dispatch to subcommands (starting with `analyze`)."""
     parser = argparse.ArgumentParser(
-        description="Discourse Intelligence Engine - analyze text or YouTube videos for structural logic and ideological patterns.",
-        epilog="Examples:\n"
-        "  discourse-engine --youtube https://www.youtube.com/watch?v=VIDEO_ID\n"
-        "  discourse-engine -y VIDEO_ID\n"
-        "  discourse-engine \"Your text to analyze...\"\n"
-        "  echo \"Your text\" | discourse-engine",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "Discourse Intelligence Engine - analyze text, transcripts, or folders "
+            "for structural logic and ideological patterns."
+        ),
     )
-    parser.add_argument(
-        "-y",
-        "--youtube",
-        metavar="URL_OR_ID",
-        help="Analyze a YouTube video by URL or video ID (fetches transcript)",
-    )
-    parser.add_argument(
-        "text",
-        nargs="*",
-        help="Text to analyze (ignored when using --youtube)",
-    )
-    parser.add_argument(
-        "--v3",
-        action="store_true",
-        help="Enable v3 Narrative Arc & Power Dynamics analysis",
-    )
-    parser.add_argument(
-        "--dialogue",
-        action="store_true",
-        help="Enable v4 dialogue analysis on speaker-tagged transcripts (Speaker: text)",
-    )
-    parser.add_argument(
-        "--export-viz",
-        metavar="PATH",
-        help="Export v3 visualization data to JSON file",
-    )
-    parser.add_argument(
-        "--llm-enhance",
-        action="store_true",
-        help="Enable optional LLM enhancement for subtle irony and assumptions (requires OPENAI_API_KEY or --ollama-model)",
-    )
-    parser.add_argument(
-        "--ollama-model",
-        metavar="MODEL",
-        help="Ollama model for LLM enhancement (e.g. llama3.2:3b)",
-    )
-    parser.add_argument(
-        "--dialogue-json",
-        metavar="PATH",
-        help="Export v4 dialogue analysis to JSON file",
-    )
-    parser.add_argument(
-        "--v5-map-json",
-        metavar="PATH",
-        help="Export V5 discourse map (semantic graph) to JSON file",
-    )
+    subparsers = parser.add_subparsers(dest="command")
+    # Require a subcommand; this is a breaking change aligned with V6.
+    subparsers.required = True  # type: ignore[attr-defined]
 
-    args = parser.parse_args()
+    add_analyze_subparser(subparsers)
 
-    def _resolve_export_path(path: str) -> str:
-        """Put export artifacts into 'exports/' by default when no folder is given."""
-        if not path:
-            return path
-        directory = os.path.dirname(path)
-        if not directory:
-            directory = "exports"
-            full = os.path.join(directory, path)
-        else:
-            full = path
-        os.makedirs(os.path.dirname(full), exist_ok=True)
-        return full
+    args = parser.parse_args(argv)
 
-    context_note: str | None = None
-    if args.youtube:
-        try:
-            print("Fetching transcript...", file=sys.stderr)
-            text, context_note = fetch_youtube_transcript(args.youtube)
-            print(f"Transcript length: {len(text)} chars\n", file=sys.stderr)
-        except ValueError as e:
-            print(str(e), file=sys.stderr)
-            sys.exit(1)
-    elif args.text:
-        text = " ".join(args.text)
-    elif not sys.stdin.isatty():
-        text = read_text_piped()
+    handler = getattr(args, "handler", None)
+    if callable(handler):
+        exit_code = handler(args)
     else:
-        text = read_text_interactive()
+        parser.print_help()
+        exit_code = 1
 
-    if not text.strip():
-        print("No text provided.", file=sys.stderr)
-        sys.exit(1)
-
-    # Optional v4 dialogue report, reused across promotion + pretty-print.
-    dialogue_report = None
-
-    config = Config(
-        llm_enhance=args.llm_enhance,
-        ollama_model=args.ollama_model,
-        llm_api_key=os.environ.get("OPENAI_API_KEY") if args.llm_enhance else None,
-    )
-    report = run_pipeline(text, config=config, context_note=context_note)
-
-    # When --dialogue: promote v4 insights (fallacies, evasion, topic threading)
-    # into the main report so they appear in Logical Fallacy Flags, Hidden Agenda,
-    # and Tone.
-    if args.dialogue or args.dialogue_json:
-        from discourse_engine.v4.dialogue_pipeline import (
-            run_dialogue_from_text,
-        )
-        from discourse_engine.v4.topic_tracker import TopicTracker
-        from discourse_engine.analyzers.logical_fallacy import LogicalFallacyAnalyzer
-
-        try:
-            dialogue_report = run_dialogue_from_text(text)
-            dialogue = dialogue_report.dialogue
-
-            # Promote per-turn fallacy flags into the main report so they appear in Logical Fallacy Flags.
-            existing_sentences = {
-                f.sentence.strip().lower()[:200] for f in report.logical_fallacy_flags
-            }
-            for turn in dialogue.turns:
-                turn_flags = LogicalFallacyAnalyzer().analyze(turn.text or "")
-                for flag in turn_flags:
-                    key = flag.sentence.strip().lower()[:200]
-                    if key not in existing_sentences:
-                        existing_sentences.add(key)
-                        report.logical_fallacy_flags.append(flag)
-
-            # Topic escalation: if key entities are dodged and never resolved, flag Intentional Topic Suppression.
-            topics = TopicTracker().analyze(dialogue)
-            for ent in topics.entities:
-                if ent.consecutive_evasions >= 1:
-                    pattern_hint = (
-                        f"entity '{ent.entity}' raised but not substantively addressed "
-                        f"({ent.consecutive_evasions} consecutive evasions)"
-                    )
-                    report.hidden_agenda_flags.append(
-                        AgendaFlag(
-                            family="Intentional evasion",
-                            technique="Topic suppression",
-                            pattern_hint=pattern_hint,
-                            sentence=topics.summary,
-                            confidence=0.80,
-                        )
-                    )
-
-            # High evasion across the dialogue → surface as tone + agenda signal.
-            if (
-                dialogue_report.evasion
-                and dialogue_report.evasion.aggregate_score >= 0.6
-            ):
-                if "Evasive" not in report.tone:
-                    report.tone.append("Evasive")
-                # Attach a coarse-grained agenda flag if not already present.
-                summary = dialogue_report.evasion.summary or "High evasion across answers."
-                report.hidden_agenda_flags.append(
-                    AgendaFlag(
-                        family="Intentional evasion",
-                        technique="Answer reframing / non-answer",
-                        pattern_hint=summary,
-                        sentence=summary,
-                        confidence=0.75,
-                    )
-                )
-        except Exception:
-            # Dialogue analysis is best-effort; do not fail the base report.
-            pass
-
-    print()
-    print(format_report(report))
-
-    if args.v3 or args.export_viz:
-        from discourse_engine.v3.pipeline import run_narrative_arc, export_viz_to_json
-
-        arc = run_narrative_arc(text)
-        print()
-        print("--- V3 Narrative Arc ---")
-        print(arc["summary"])
-        if arc["escalation_points"]:
-            print(f"Escalation at chunks: {arc['escalation_points']}")
-        if arc["framing_shifts"]:
-            print("Framing shifts:", arc["framing_shifts"])
-        if arc.get("logical_leaps"):
-            for ll in arc["logical_leaps"]:
-                print(f"Logical leap (similarity={ll['similarity']:.2f}):")
-                print(f"  Problem: {ll['problem_snippet']}")
-                print(f"  Solution: {ll['solution_snippet']}")
-        if args.export_viz:
-            export_path = _resolve_export_path(args.export_viz)
-            export_viz_to_json(arc["viz"], export_path)
-
-    if args.dialogue or args.dialogue_json:
-        from discourse_engine.v4.dialogue_pipeline import (
-            run_dialogue_from_text,
-            dialogue_report_to_dict,
-            format_dialogue_report,
-        )
-        import json
-
-        # Reuse the dialogue report computed above when available.
-        if dialogue_report is None:
-            dialogue_report = run_dialogue_from_text(text)
-
-        if args.dialogue:
-            print()
-            print(format_dialogue_report(dialogue_report))
-        if args.dialogue_json:
-            data = dialogue_report_to_dict(dialogue_report)
-            export_path = _resolve_export_path(args.dialogue_json)
-            with open(export_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-            print(f"\nExported v4 dialogue analysis to {export_path}", file=sys.stderr)
-
-    if args.v5_map_json:
-        from discourse_engine.v5.scene_detector import build_v5_discourse_map
-        from discourse_engine.v5.visualization import export_discourse_map
-
-        result = build_v5_discourse_map(text, document_id="doc:0")
-        export_path = _resolve_export_path(args.v5_map_json)
-        export_discourse_map(result.discourse_map, export_path)
-        print(f"\nExported v5 discourse map to {export_path}", file=sys.stderr)
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":
