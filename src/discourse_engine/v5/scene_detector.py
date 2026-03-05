@@ -17,6 +17,7 @@ from discourse_engine.v3.narrative_arc import NarrativeArcAnalyzer
 from discourse_engine.v4.dialogue_pipeline import parse_speaker_tagged_text
 from discourse_engine.v4.models import Dialogue
 from discourse_engine.v5.models import DiscourseMap, Scene, GraphEdge, GraphNode
+from discourse_engine.v5.semantic_drift import compute_semantic_drift
 
 # Agreement patterns: "I agree with [Name]", "[Name] is right", "You're right"
 _AGREE_WITH_RE = re.compile(
@@ -218,6 +219,11 @@ def build_v5_discourse_map(text: str, document_id: str = "doc:0") -> SceneDetect
         arc = NarrativeArcAnalyzer().analyze(text)
         if arc.chunks:
             emotional_intensity = sum(c.emotional_intensity for c in arc.chunks) / len(arc.chunks)
+
+    # Optional semantic drift summary between early and late segments.
+    drift = compute_semantic_drift(text)
+    if drift:
+        dm.metadata["semantic_drift"] = drift
 
     scene_id = f"scene:{document_id}:0"
     scene = Scene(

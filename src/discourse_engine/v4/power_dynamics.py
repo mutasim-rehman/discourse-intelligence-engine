@@ -78,6 +78,7 @@ class PowerDynamicsAnalyzer:
                 "sum_intensity": 0.0,
                 "sum_dominance": 0.0,
                 "sum_certainty": 0.0,
+                "title_prior": 0.0,
             }
         )
 
@@ -101,6 +102,30 @@ class PowerDynamicsAnalyzer:
                 if prev.speaker_id != t.speaker_id and len(tokens) > 0 and len(tokens) <= 10:
                     stats["interruption_count"] += 1
 
+        # Title-based authority priors from speaker display names.
+        TITLE_WEIGHTS = {
+            "ceo": 1.0,
+            "chief executive officer": 1.0,
+            "minister": 0.95,
+            "high overseer": 0.95,
+            "general": 0.9,
+            "director": 0.85,
+            "chair": 0.85,
+            "chairperson": 0.85,
+            "president": 0.9,
+            "manager": 0.7,
+            "auditor": 0.65,
+        }
+
+        for speaker_id, profile in (dialogue.speaker_profiles or {}).items():
+            display = (profile.display_name or "").lower()
+            prior = 0.0
+            for title, weight in TITLE_WEIGHTS.items():
+                if title in display:
+                    prior = max(prior, weight)
+            if prior > 0.0:
+                per_speaker[speaker_id]["title_prior"] = prior
+
         metrics: list[SpeakerPowerMetrics] = []
         for speaker_id, stats in per_speaker.items():
             total_turns = int(stats["total_turns"])
@@ -109,9 +134,15 @@ class PowerDynamicsAnalyzer:
             avg_intensity = stats["sum_intensity"] / total_turns
             avg_dominance = stats["sum_dominance"] / total_turns
             avg_certainty = stats["sum_certainty"] / total_turns
+            title_prior = float(stats["title_prior"])
 
             dominance_score = min(avg_intensity + 0.5 * avg_dominance, 1.0)
-            authority_score = min(avg_certainty, 1.0)
+            # Blend certainty-based authority with title-based prior so that a quiet CEO
+            # still appears more authoritative than a loud Manager.
+            blended = avg_certainty
+            if title_prior > 0.0:
+                blended = (avg_certainty + 0.5 * title_prior) / 1.5
+            authority_score = min(blended, 1.0)
 
             metrics.append(
                 SpeakerPowerMetrics(
