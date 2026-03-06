@@ -31,6 +31,115 @@ _MULTISPEAKER_LABEL_RE = re.compile(
     r"([A-Z][A-Za-z0-9]*(?:\s+[A-Z][A-Za-z0-9]*)*):\s*"
 )
 
+# Gutenberg / source-tag scrubbers: common noise that prevents speaker detection.
+_LEADING_SOURCE_TAG_RE = re.compile(
+    r"^(?:\s*(?:`{1,3}|''|“”|\"\"|\[\d+\]|\(\d+\)|\d+\||\d{1,6}\s+))+\s*",
+    re.MULTILINE,
+)
+
+# Prose dialogue patterns:
+# - "Quote," said Holmes.
+# - Holmes said, "Quote."
+# - 'Quote,' said Mr. Watson.
+_QUOTE_CHARS = "\"“”'‘’"
+_QUOTE_SPAN_RE = re.compile(r"([\"“”'‘’])(.+?)\1", re.DOTALL)
+_SAID_VERBS = (
+    "said|asked|replied|cried|returned|murmured|whispered|shouted|exclaimed|answered|remarked|added|observed"
+)
+_TITLE = r"(?:Mr\.|Mrs\.|Ms\.|Miss|Dr\.|Inspector|Detective|Sir|Lady)"
+_NAME = r"(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)"
+_ATTR_AFTER_RE = re.compile(
+    rf"(?:,\s*)?(?:{_SAID_VERBS})\s+(?:{_TITLE}\s+)?(?P<name>{_NAME}|he|she|they)\b",
+)
+_ATTR_BEFORE_RE = re.compile(
+    rf"(?P<name>{_NAME}|{_TITLE}\s+{_NAME}|he|she|they)\s+(?:{_SAID_VERBS})\s*(?:,|:)?\s*$",
+)
+
+
+def _scrub_source_tags(text: str) -> str:
+    """Remove leading numeric/source tag noise that blocks label regexes."""
+    if not text:
+        return text
+    # Remove repeated leading tags per line/paragraph.
+    return _LEADING_SOURCE_TAG_RE.sub("", text)
+
+
+def _speaker_label_from_prose(name: str, last_named: str | None) -> str:
+    n = (name or "").strip()
+    if not n:
+        return last_named or "Speaker_A"
+    lowered = n.lower()
+    if lowered in {"he", "she", "they"}:
+        return last_named or ("Speaker_A" if lowered == "he" else "Speaker_B")
+    return n
+
+
+def _parse_prose_dialogue(text: str) -> Optional[Dialogue]:
+    """Heuristic prose-to-tag converter for novels/literary dialogue.
+
+    Extracts quoted spans and tries to attribute them to speakers based on nearby
+    'said/asked/replied' patterns. Falls back to alternating speakers when needed.
+    """
+    raw = text.strip()
+    if not raw:
+        return None
+
+    turns_list: list[DialogueTurn] = []
+    profiles: dict[str, SpeakerProfile] = {}
+    last_named: str | None = None
+    alt_toggle = 0
+
+    # Iterate quoted spans in order and assign speakers.
+    for m in _QUOTE_SPAN_RE.finditer(raw):
+        quote_text = (m.group(2) or "").strip()
+        if not quote_text:
+            continue
+
+        after = raw[m.end() : m.end() + 120]
+        before = raw[max(0, m.start() - 120) : m.start()]
+
+        speaker_label: str | None = None
+
+        m_after = _ATTR_AFTER_RE.search(after)
+        if m_after:
+            speaker_label = m_after.group("name")
+        else:
+            # Look for "Holmes said," immediately before the quote.
+            tail = before.splitlines()[-1] if before else before
+            m_before = _ATTR_BEFORE_RE.search(tail)
+            if m_before:
+                speaker_label = m_before.group("name")
+
+        if speaker_label is None:
+            speaker_label = "Speaker_A" if (alt_toggle % 2 == 0) else "Speaker_B"
+            alt_toggle += 1
+
+        speaker_label = _speaker_label_from_prose(speaker_label, last_named)
+        if speaker_label not in {"Speaker_A", "Speaker_B"} and speaker_label.lower() not in {"he", "she", "they"}:
+            last_named = speaker_label
+
+        speaker_id = _normalize_speaker_id(speaker_label)
+        if speaker_id not in profiles:
+            profiles[speaker_id] = SpeakerProfile(
+                speaker_id=speaker_id, display_name=speaker_label
+            )
+
+        turn_index = len(turns_list)
+        turns_list.append(
+            DialogueTurn(
+                speaker_id=speaker_id,
+                text=quote_text,
+                turn_index=turn_index,
+                display_name=speaker_label,
+                role=profiles[speaker_id].role,
+            )
+        )
+
+    if len(turns_list) < 2:
+        return None
+
+    return Dialogue(turns=turns_list, speaker_profiles=profiles)
+
 
 def _normalize_speaker_id(label: str) -> str:
     """Create a stable, lowercase speaker id from a display label."""
@@ -38,6 +147,66 @@ def _normalize_speaker_id(label: str) -> str:
     base = re.sub(r"\s+", "_", base)
     base = re.sub(r"[^a-z0-9_]+", "", base)
     return base or "speaker"
+
+
+_NON_SPEAKER_LABEL_WORDS = {
+    "chapter",
+    "book",
+    "part",
+    "scene",
+    "page",
+    "contents",
+    "preface",
+    "appendix",
+    "footnote",
+    "illustration",
+    "note",
+    "printed",
+}
+_NON_NAME_CONNECTORS = {
+    # These often appear in headings/narration, not human labels.
+    "in",
+    "of",
+    "and",
+    "to",
+    "for",
+    "from",
+    "with",
+    "on",
+    "at",
+    "by",
+    "upon",
+    "into",
+    "over",
+    "under",
+    "through",
+}
+
+
+def _is_plausible_speaker_label(label: str) -> bool:
+    """Heuristic filter to avoid treating prose headings as speakers."""
+    l = (label or "").strip()
+    if not l:
+        return False
+    words = [w for w in re.split(r"\s+", l) if w]
+    if len(words) == 0 or len(words) > 3:
+        return False
+
+    # Reject common section/metadata headings.
+    if any(w.lower().strip(".") in _NON_SPEAKER_LABEL_WORDS for w in words):
+        return False
+
+    # Reject connector-heavy headings like "Printed In Rather ..."
+    # Allow "The X" as a role label (common in transcripts), but reject other
+    # connectors beyond the first word.
+    for idx, w in enumerate(words):
+        lw = w.lower().strip(".")
+        if idx == 0 and lw == "the":
+            continue
+        if idx > 0 and lw in _NON_NAME_CONNECTORS:
+            return False
+
+    return True
 
 
 def _parse_multispeaker_inline(text: str) -> Optional[Dialogue]:
@@ -55,7 +224,7 @@ def _parse_multispeaker_inline(text: str) -> Optional[Dialogue]:
         preceding = text[: m.start()].rstrip()
         if not preceding or preceding[-1] in ".\n!?":
             label = m.group(1).strip()
-            if label:
+            if label and _is_plausible_speaker_label(label):
                 matches.append((m.start(), m.end(), label))
 
     if len(matches) < 2:
@@ -100,7 +269,7 @@ def parse_speaker_tagged_text(text: str) -> Dialogue:
     Then: interview-style (Interviewer/Politician).
     Fallback: line-by-line "Label: content".
     """
-    text = text.strip()
+    text = _scrub_source_tags(text.strip())
     turns: list[DialogueTurn] = []
     profiles: dict[str, SpeakerProfile] = {}
 
@@ -154,7 +323,7 @@ def parse_speaker_tagged_text(text: str) -> Dialogue:
             label_part, content_part = line.split(":", 1)
             label = label_part.strip()
             content = content_part.strip()
-            if label and content:
+            if label and content and _is_plausible_speaker_label(label):
                 speaker_id = _normalize_speaker_id(label)
                 profile = profiles.get(speaker_id)
                 if profile is None:
@@ -193,6 +362,17 @@ def parse_speaker_tagged_text(text: str) -> Dialogue:
     # Normalize turn indices in case we created an anonymous first turn midstream.
     for idx, t in enumerate(turns):
         t.turn_index = idx
+
+    # If we failed to identify multiple speakers (or likely misidentified headings),
+    # try prose dialogue heuristics. This enables novels / literary dialogue to still
+    # yield a multi-speaker graph.
+    plausible_profiles = [
+        p for p in profiles.values() if p.display_name and _is_plausible_speaker_label(p.display_name)
+    ]
+    if len(turns) < 2 or len(plausible_profiles) < 2:
+        prose = _parse_prose_dialogue(text)
+        if prose is not None and len(prose.turns) >= 2:
+            return prose
 
     return Dialogue(turns=turns, speaker_profiles=profiles)
 

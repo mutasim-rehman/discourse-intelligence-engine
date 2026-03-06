@@ -187,9 +187,18 @@ def _is_dialogue_like(text: str, sentences: List[str]) -> bool:
             return True
     # Quotation-density heuristic.
     if sentences:
-        quote_sents = sum(1 for s in sentences if '"' in s or "“" in s or "”" in s)
-        if quote_sents / len(sentences) >= 0.4:
+        quote_sents = sum(
+            1
+            for s in sentences
+            if any(q in s for q in ('"', "“", "”", "'", "‘", "’"))
+        )
+        if quote_sents / len(sentences) >= 0.25:
             return True
+        # Prose dialogue heuristic: attribution verbs near quotes.
+        lowered = text.lower()
+        if any(v in lowered for v in (" said ", " asked ", " replied ", " whispered ", " exclaimed ")):
+            if ('"' in text or "“" in text or "”" in text or "'" in text or "‘" in text or "’" in text):
+                return True
     return False
 
 
