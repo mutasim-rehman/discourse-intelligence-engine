@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Dict, Iterable, Tuple
 
+from discourse_engine.analyzers.logical_fallacy import LogicalFallacyAnalyzer
 from discourse_engine.v4.models import DialogueReport
 from discourse_engine.v5.models import DiscourseMap, GraphEdge
 from discourse_engine.v6.arcs import (
@@ -35,10 +36,10 @@ def build_character_arcs(
 ) -> Dict[str, CharacterArc]:
     """Build per-character arcs for a single document.
 
-    For now this is deliberately simple:
-    - position axis = normalized turn index within the dialogue (when available).
-    - metrics per point = authority/dominance (v4 power), evasion (v4),
-      basic fallacy habit counts and semantic drift snapshots (v5).
+    This builds a coarse, segment-based arc for each character, capturing:
+    - Authority / dominance trajectory across the dialogue.
+    - Evasion trajectory (how evasive recent answers are).
+    - Tactic migration via dominant fallacy family per segment.
     """
     document_id = document_id or (
         dm.metadata.get("documents", [None])[0] if dm.metadata.get("documents") else None
@@ -47,59 +48,230 @@ def build_character_arcs(
     arcs: Dict[str, CharacterArc] = {}
 
     # v4 dialogue alignment (if available)
-    turns = []
-    evasion_by_turn: dict[int, float] = {}
     if dialogue_report is not None:
         dialogue = dialogue_report.dialogue
         turns = list(dialogue.turns)
         total_turns = len(turns)
 
-        if dialogue_report.evasion and dialogue_report.evasion.scores:
-            for s in dialogue_report.evasion.scores:
-                evasion_by_turn[int(s.turn_index)] = float(s.score)
+        if total_turns:
+            # --- Precompute per-turn metrics ---
+            evasion_by_turn: dict[int, float] = {}
+            if dialogue_report.evasion and dialogue_report.evasion.scores:
+                for s in dialogue_report.evasion.scores:
+                    evasion_by_turn[int(s.turn_index)] = float(s.score)
 
-        power_by_speaker: dict[str, tuple[float, float]] = {}
-        if dialogue_report.power_dynamics:
-            for m in dialogue_report.power_dynamics.speakers:
-                power_by_speaker[m.speaker_id] = (
-                    float(m.dominance_score),
-                    float(m.authority_score),
+            power_by_speaker: dict[str, tuple[float, float]] = {}
+            if dialogue_report.power_dynamics:
+                for m in dialogue_report.power_dynamics.speakers:
+                    power_by_speaker[m.speaker_id] = (
+                        float(m.dominance_score),
+                        float(m.authority_score),
+                    )
+
+            fallacy_analyzer = LogicalFallacyAnalyzer()
+            fallacies_by_turn: dict[int, Dict[str, int]] = {}
+            for t in turns:
+                if not t.text:
+                    continue
+                counts: Dict[str, int] = {}
+                for f in fallacy_analyzer.analyze(t.text):
+                    ftype = f.fallacy_type or f.name
+                    counts[ftype] = counts.get(ftype, 0) + 1
+                if counts:
+                    fallacies_by_turn[t.turn_index] = counts
+
+            # --- Segment the dialogue into N segments (path over time) ---
+            max_segments = 10
+            n_segments = min(max_segments, total_turns) or 1
+            seg_size = max(1, total_turns // n_segments)
+
+            # For each segment and speaker, aggregate metrics.
+            per_speaker_segments: Dict[str, list[CharacterArcPoint]] = {}
+
+            for seg_idx in range(n_segments):
+                start = seg_idx * seg_size
+                # Last segment takes the remainder.
+                end = total_turns if seg_idx == n_segments - 1 else min(
+                    total_turns, (seg_idx + 1) * seg_size
                 )
-        else:
-            power_by_speaker = {}
+                if start >= end:
+                    continue
 
-        # Build an initial arc point for each turn.
-        for t in turns:
-            sid = t.speaker_id
-            if not sid:
-                continue
-            arc = arcs.setdefault(
-                sid,
-                CharacterArc(
-                    character_id=sid,
-                    display_name=dialogue.speaker_profiles.get(sid).display_name
-                    if sid in dialogue.speaker_profiles
-                    else sid,
-                ),
-            )
-            pos = _normalized_position_from_turn(t.turn_index, total_turns)
-            dom, auth = power_by_speaker.get(sid, (0.0, 0.0))
-            metrics = {
-                "dominance_score": dom,
-                "authority_score": auth,
-            }
-            if t.turn_index in evasion_by_turn:
-                metrics["evasion_score"] = evasion_by_turn[t.turn_index]
-
-            arc.points.append(
-                CharacterArcPoint(
-                    document_id=document_id,
-                    scene_id=None,
-                    turn_index=t.turn_index,
-                    position=pos,
-                    metrics=metrics,
+                segment_turns = turns[start:end]
+                segment_pos = _normalized_position_from_turn(
+                    (start + end - 1) // 2, total_turns
                 )
-            )
+
+                # Aggregate metrics per speaker within this segment.
+                per_speaker_data: Dict[str, Dict[str, Any]] = {}
+                for t in segment_turns:
+                    sid = t.speaker_id
+                    if not sid:
+                        continue
+                    data = per_speaker_data.setdefault(
+                        sid,
+                        {
+                            "dom_sum": 0.0,
+                            "auth_sum": 0.0,
+                            "count": 0,
+                            "evasion_sum": 0.0,
+                            "evasion_count": 0,
+                            "fallacy_counts": {},
+                        },
+                    )
+                    dom, auth = power_by_speaker.get(sid, (0.0, 0.0))
+                    data["dom_sum"] += dom
+                    data["auth_sum"] += auth
+                    data["count"] += 1
+                    if t.turn_index in evasion_by_turn:
+                        data["evasion_sum"] += evasion_by_turn[t.turn_index]
+                        data["evasion_count"] += 1
+                    if t.turn_index in fallacies_by_turn:
+                        for ftype, c in fallacies_by_turn[t.turn_index].items():
+                            data["fallacy_counts"][ftype] = (
+                                data["fallacy_counts"].get(ftype, 0) + c
+                            )
+
+                for sid, data in per_speaker_data.items():
+                    arc = arcs.setdefault(
+                        sid,
+                        CharacterArc(
+                            character_id=sid,
+                            display_name=dialogue.speaker_profiles.get(sid).display_name
+                            if sid in dialogue.speaker_profiles
+                            else sid,
+                        ),
+                    )
+                    count = max(1, data["count"])
+                    seg_dom = data["dom_sum"] / count
+                    seg_auth = data["auth_sum"] / count
+                    if data["evasion_count"]:
+                        seg_evasion = data["evasion_sum"] / data["evasion_count"]
+                    else:
+                        seg_evasion = 0.0
+
+                    # Dominant tactic label for this segment.
+                    fall_counts = data["fallacy_counts"]
+                    tactic_label = "Fact-based"
+                    if fall_counts:
+                        dominant_ftype, _ = max(
+                            fall_counts.items(), key=lambda kv: kv[1]
+                        )
+                        tactic_label = dominant_ftype
+
+                    metrics = {
+                        "segment_index": seg_idx,
+                        "dominance_score": seg_dom,
+                        "authority_score": seg_auth,
+                        "evasion_score": seg_evasion,
+                        "tactic_label": tactic_label,
+                    }
+
+                    pt = CharacterArcPoint(
+                        document_id=document_id,
+                        scene_id=None,
+                        turn_index=None,
+                        position=segment_pos,
+                        metrics=metrics,
+                    )
+                    per_speaker_segments.setdefault(sid, []).append(pt)
+
+            # Attach segment points and compute velocity metrics + turning points.
+            # We need cross-speaker visibility for power pivots.
+            for sid, points in per_speaker_segments.items():
+                # Sort by position to ensure consistent deltas.
+                points.sort(key=lambda p: p.position)
+                prev_auth = None
+                prev_evasion = None
+                prev_tactic = None
+                for p in points:
+                    auth = float(p.metrics.get("authority_score", 0.0))
+                    ev = float(p.metrics.get("evasion_score", 0.0))
+                    tactic = str(p.metrics.get("tactic_label", "Fact-based"))
+                    if prev_auth is not None:
+                        p.metrics["authority_delta"] = auth - prev_auth
+                    else:
+                        p.metrics["authority_delta"] = 0.0
+                    if prev_evasion is not None:
+                        p.metrics["evasion_delta"] = ev - prev_evasion
+                    else:
+                        p.metrics["evasion_delta"] = 0.0
+                    if prev_tactic is not None and tactic != prev_tactic:
+                        p.metrics["tactic_changed_from"] = prev_tactic
+                    prev_auth = auth
+                    prev_evasion = ev
+                    prev_tactic = tactic
+
+                arc = arcs.setdefault(
+                    sid,
+                    CharacterArc(
+                        character_id=sid,
+                        display_name=dialogue.speaker_profiles.get(sid).display_name
+                        if sid in dialogue.speaker_profiles
+                        else sid,
+                    ),
+                )
+                arc.points.extend(points)
+
+            # Power pivots and evasion spikes (turning points)
+            # Examine segments across all speakers at each segment index.
+            segments_by_idx: Dict[int, Dict[str, CharacterArcPoint]] = {}
+            for sid, arc in arcs.items():
+                for p in arc.points:
+                    seg_idx = int(p.metrics.get("segment_index", -1))
+                    if seg_idx >= 0:
+                        segments_by_idx.setdefault(seg_idx, {})[sid] = p
+
+            # Track global best authority so far for pivot detection.
+            best_auth_so_far: Dict[str, float] = {}
+            for seg_idx in sorted(segments_by_idx.keys()):
+                seg_points = segments_by_idx[seg_idx]
+                # Determine current leader in this segment.
+                leader_sid = None
+                leader_auth = 0.0
+                for sid, p in seg_points.items():
+                    a = float(p.metrics.get("authority_score", 0.0))
+                    if leader_sid is None or a > leader_auth:
+                        leader_sid, leader_auth = sid, a
+
+                if leader_sid is None:
+                    continue
+
+                prev_best = best_auth_so_far.get(leader_sid, 0.0)
+                if leader_auth >= prev_best + 0.2 and leader_auth >= 0.5:
+                    # Mark a power pivot for this speaker.
+                    arcs[leader_sid].events.append(
+                        ArcEvent(
+                            position=seg_points[leader_sid].position,
+                            label="power_pivot",
+                            details={
+                                "segment_index": seg_idx,
+                                "authority": leader_auth,
+                                "previous_best": prev_best,
+                            },
+                        )
+                    )
+                    best_auth_so_far[leader_sid] = leader_auth
+                else:
+                    best_auth_so_far[leader_sid] = max(prev_best, leader_auth)
+
+                # Evasion turning points (Mask Slip / Turning Point).
+                for sid, p in seg_points.items():
+                    ev = float(p.metrics.get("evasion_score", 0.0))
+                    ev_delta = float(p.metrics.get("evasion_delta", 0.0))
+                    if ev >= 0.8 and ev_delta >= 0.2:
+                        arcs[sid].events.append(
+                            ArcEvent(
+                                position=p.position,
+                                label="evasion_spike",
+                                details={
+                                    "segment_index": seg_idx,
+                                    "evasion": ev,
+                                    "evasion_delta": ev_delta,
+                                },
+                            )
+                        )
+
 
     # Enrich with v5 library-level metadata when present (fallacy habits, docs).
     for cid, profile in dm.character_profiles.items():

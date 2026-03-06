@@ -45,6 +45,23 @@ def _content_type_from_satire(prob: float, trigger_profile) -> str:
     return "Persuasive Rhetoric (low satire probability)"
 
 
+def _prepare_llm_text(text: str, max_chars: int = 8000) -> str:
+    """Prepare text for LLM enhancement without blowing context limits.
+
+    Simple strategy:
+    - If text is short enough, return as-is.
+    - Otherwise, take start, middle, and end slices and join them with separators.
+    """
+    if len(text) <= max_chars:
+        return text
+    third = max_chars // 3
+    start = text[:third]
+    mid_start = max(len(text) // 2 - third // 2, 0)
+    mid = text[mid_start : mid_start + third]
+    end = text[-third:]
+    return start + "\n...\n" + mid + "\n...\n" + end
+
+
 def run_pipeline(text: str, config: Config | None = None, context_note: str | None = None) -> Report:
     """Run the full analysis pipeline on text and return a Report."""
     if config is None:
@@ -68,8 +85,9 @@ def run_pipeline(text: str, config: Config | None = None, context_note: str | No
     # Optional LLM enhancement for satire (subtle irony)
     if config.llm_enhance and (config.llm_api_key or config.ollama_model):
         from discourse_engine.llm_enhancement import enhance_satire_irony
+        llm_text = _prepare_llm_text(text)
         satire_prob, satire_signals = enhance_satire_irony(
-            text,
+            llm_text,
             satire_prob,
             satire_signals,
             trigger_profile=trigger,
@@ -93,8 +111,9 @@ def run_pipeline(text: str, config: Config | None = None, context_note: str | No
     # Optional LLM enhancement for assumptions (when structural found few/none)
     if config.llm_enhance and (config.llm_api_key or config.ollama_model):
         from discourse_engine.llm_enhancement import enhance_assumptions
+        llm_text = _prepare_llm_text(text)
         assumptions = enhance_assumptions(
-            text,
+            llm_text,
             assumptions,
             api_key=config.llm_api_key,
             model=config.llm_model,
