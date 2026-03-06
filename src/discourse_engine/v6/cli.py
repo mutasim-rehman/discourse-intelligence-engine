@@ -27,6 +27,11 @@ from discourse_engine.v5.scene_detector import build_v5_discourse_map
 from discourse_engine.v5.visualization import export_discourse_map, social_graph_view
 from discourse_engine.v5.mermaid import discourse_map_to_mermaid
 from discourse_engine.v6.aggregator import export_library_persona_report
+from discourse_engine.v6.arcs import arcs_to_view_payload
+from discourse_engine.v6.arcs_pipeline import (
+    build_character_arcs,
+    build_library_character_arcs,
+)
 
 
 def fetch_youtube_transcript(url_or_id: str) -> tuple[str, str | None]:
@@ -201,6 +206,11 @@ def add_analyze_subparser(subparsers: argparse._SubParsersAction[argparse.Argume
         help="Export cross-document library persona report to JSON (batch mode).",
     )
     analyze.add_argument(
+        "--v6-arcs-json",
+        metavar="PATH",
+        help="Export V6 character arcs for this run to JSON (single-text or batch).",
+    )
+    analyze.add_argument(
         "--export",
         action="store_true",
         help=(
@@ -238,6 +248,32 @@ def run_analyze_from_args(args: argparse.Namespace) -> int:
             if getattr(args, "export", False):
                 mmd_path = _export_mermaid_for_map(discourse_map, export_path)
                 print(f"Exported mermaid graph to {mmd_path}", file=sys.stderr)
+
+            # Optional V6 character arcs export (single-text).
+            if getattr(args, "v6_arcs_json", None):
+                from discourse_engine.v4.dialogue_pipeline import run_dialogue_from_text
+                import json
+
+                try:
+                    dialogue_report = run_dialogue_from_text(text)
+                    from discourse_engine.v6.arcs_pipeline import build_relationship_arcs
+
+                    char_arcs = build_character_arcs(
+                        discourse_map,
+                        dialogue_report=dialogue_report,
+                        document_id=f"youtube:{args.youtube}",
+                    )
+                    rel_arcs = build_relationship_arcs(discourse_map)
+                    payload = arcs_to_view_payload(char_arcs, rel_arcs)
+                    arcs_path = _resolve_export_path(args.v6_arcs_json)
+                    with open(arcs_path, "w", encoding="utf-8") as f:
+                        json.dump(payload, f, indent=2)
+                    print(
+                        f"Exported V6 character arcs to {arcs_path}",
+                        file=sys.stderr,
+                    )
+                except Exception:
+                    pass
 
         return 0
 
@@ -293,6 +329,24 @@ def run_analyze_from_args(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
 
+        # Optional V6 library-level character arcs export.
+        if getattr(args, "v6_arcs_json", None):
+            import json
+            from discourse_engine.v6.arcs_pipeline import build_library_character_arcs
+
+            try:
+                lib_char_arcs = build_library_character_arcs(library_map)
+                payload = arcs_to_view_payload(lib_char_arcs)
+                arcs_path = _resolve_export_path(args.v6_arcs_json)
+                with open(arcs_path, "w", encoding="utf-8") as f:
+                    json.dump(payload, f, indent=2)
+                print(
+                    f"Exported V6 library character arcs to {arcs_path}",
+                    file=sys.stderr,
+                )
+            except Exception:
+                pass
+
         return 0
 
     # Single-document mode.
@@ -340,6 +394,32 @@ def run_analyze_from_args(args: argparse.Namespace) -> int:
         if getattr(args, "export", False):
             mmd_path = _export_mermaid_for_map(discourse_map, export_path)
             print(f"Exported mermaid graph to {mmd_path}", file=sys.stderr)
+
+    # Optional V6 character arcs export for single-document mode.
+    if discourse_map is not None and getattr(args, "v6_arcs_json", None):
+        from discourse_engine.v4.dialogue_pipeline import run_dialogue_from_text
+        import json
+
+        try:
+            dialogue_report = run_dialogue_from_text(text)
+            from discourse_engine.v6.arcs_pipeline import build_relationship_arcs
+
+            char_arcs = build_character_arcs(
+                discourse_map,
+                dialogue_report=dialogue_report,
+                document_id=document_id,
+            )
+            rel_arcs = build_relationship_arcs(discourse_map)
+            payload = arcs_to_view_payload(char_arcs, rel_arcs)
+            arcs_path = _resolve_export_path(args.v6_arcs_json)
+            with open(arcs_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2)
+            print(
+                f"Exported V6 character arcs to {arcs_path}",
+                file=sys.stderr,
+            )
+        except Exception:
+            pass
 
     return 0
 
