@@ -72,13 +72,29 @@ export function InputModeSelector({ onChange }: InputModeSelectorProps) {
 
   function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
     const nextFile = e.target.files?.[0]
-    if (nextFile && !nextFile.name.toLowerCase().endsWith('.txt')) {
+    if (!nextFile) {
+      setFile(undefined)
+      emitChange(mode, rawText, undefined, youtubeUrl)
+      return
+    }
+    if (!nextFile.name.toLowerCase().endsWith('.txt')) {
       setFile(undefined)
       onChange(null, false)
       return
     }
     setFile(nextFile)
-    emitChange(mode, rawText, nextFile, youtubeUrl)
+    // Read file contents client-side and treat as raw_text for the API
+    const reader = new FileReader()
+    reader.onload = () => {
+      const contents = (reader.result as string) ?? ''
+      const value: InputModeValue = { sourceType: 'raw_text', rawText: contents }
+      onChange(value, contents.trim().length >= minTextLength)
+    }
+    reader.onerror = () => {
+      setFile(undefined)
+      onChange(null, false)
+    }
+    reader.readAsText(nextFile, 'utf-8')
   }
 
   function handleYoutubeChange(e: ChangeEvent<HTMLInputElement>) {
@@ -140,9 +156,16 @@ export function InputModeSelector({ onChange }: InputModeSelectorProps) {
               accept=".txt,text/plain"
               onChange={handleFileChange}
             />
-            <div className="field-help">
-              Only plain text files are supported for now.
-            </div>
+            {file && (
+              <div className="field-help file-loaded">
+                Loaded: {file.name}. Contents will be sent for analysis.
+              </div>
+            )}
+            {!file && (
+              <div className="field-help">
+                Only plain text files are supported. File contents are read in your browser.
+              </div>
+            )}
           </div>
         )}
 
