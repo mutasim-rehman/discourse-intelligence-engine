@@ -47,13 +47,33 @@ def discourse_map_to_mermaid(data: Dict[str, Any]) -> str:
                 "label": node.get("label") or node_id,
             }
 
-    # Co-occurrence edges between speakers
-    co_edges = []
+    labeled_edges: list[tuple[str, str, str]] = []
+    co_edges: list[tuple[str, str]] = []
+
     for e in edges:
-        if e.get("kind") == "co_occurs_in_scene":
-            src, tgt = e.get("source"), e.get("target")
-            if src in speaker_nodes and tgt in speaker_nodes:
-                co_edges.append((src, tgt))
+        kind = e.get("kind")
+        src, tgt = e.get("source"), e.get("target")
+        if not src or not tgt:
+            continue
+        if src not in speaker_nodes or tgt not in speaker_nodes:
+            continue
+
+        if kind == "responds_to":
+            ev = None
+            meta = e.get("metadata") or {}
+            if isinstance(meta, dict):
+                ev = meta.get("evasion_score")
+            if isinstance(ev, (int, float)):
+                label = f"Answers (evasion={ev:.2f})"
+            else:
+                label = "Answers"
+            labeled_edges.append((src, tgt, label))
+        elif kind == "aligns_with":
+            labeled_edges.append((src, tgt, "Aligns With"))
+        elif kind == "follows":
+            labeled_edges.append((src, tgt, "Responds"))
+        elif kind == "co_occurs_in_scene":
+            co_edges.append((src, tgt))
 
     lines = ["graph TD"]
 
@@ -61,19 +81,33 @@ def discourse_map_to_mermaid(data: Dict[str, Any]) -> str:
     for node_id, meta in speaker_nodes.items():
         lines.append(f"    {meta['id']}[{meta['label']}]")
 
-    # Co-occurrence as light, unlabeled arrows
-    for src, tgt in co_edges:
-        sid = speaker_nodes[src]["id"]
-        tid = speaker_nodes[tgt]["id"]
-        lines.append(f"    {sid} --> {tid}")
+    # Prefer labeled interaction edges; only fall back to co-occurrence when nothing else exists.
+    if labeled_edges:
+        # Deduplicate: collapse repeated edges into a single labeled edge.
+        counts: Dict[tuple[str, str, str], int] = {}
+        for src, tgt, label in labeled_edges:
+            counts[(src, tgt, label)] = counts.get((src, tgt, label), 0) + 1
+        for (src, tgt, label), n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0][0], kv[0][1], kv[0][2])):
+            sid = speaker_nodes[src]["id"]
+            tid = speaker_nodes[tgt]["id"]
+            edge_label = label if n == 1 else f"{label} x{n}"
+            lines.append(f"    {sid} -- \"{edge_label}\" --> {tid}")
+    else:
+        for src, tgt in co_edges:
+            sid = speaker_nodes[src]["id"]
+            tid = speaker_nodes[tgt]["id"]
+            lines.append(f"    {sid} --> {tid}")
 
-    # Alliances (aligns_with) as labeled edges
+    # Alliances view (legacy): keep rendering if present and not already added.
+    existing_pairs = {(s, t) for (s, t, _lbl) in labeled_edges}
     for edge in alliances:
         src = edge.get("source")
         tgt = edge.get("target")
         if not src or not tgt:
             continue
         if src not in speaker_nodes or tgt not in speaker_nodes:
+            continue
+        if (src, tgt) in existing_pairs:
             continue
         sid = speaker_nodes[src]["id"]
         tid = speaker_nodes[tgt]["id"]

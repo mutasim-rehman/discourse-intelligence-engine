@@ -16,6 +16,7 @@ from discourse_engine.utils.text_utils import split_sentences
 from discourse_engine.v3.narrative_arc import NarrativeArcAnalyzer
 from discourse_engine.v4.dialogue_pipeline import parse_speaker_tagged_text
 from discourse_engine.v4.models import Dialogue
+from discourse_engine.v4.evasion import DialogueEvasionAnalyzer
 from discourse_engine.v5.models import DiscourseMap, Scene, GraphEdge, GraphNode
 from discourse_engine.v5.semantic_drift import compute_semantic_drift
 
@@ -181,8 +182,15 @@ def _is_dialogue_like(text: str, sentences: List[str]) -> bool:
             total_lines += 1
             if ":" in stripped:
                 before, _after = stripped.split(":", 1)
-                if 1 <= len(before.split()) <= 3:
-                    dialogue_lines += 1
+                parts = before.split()
+                # Heuristic: plausible speaker labels tend to contain uppercase letters
+                # or be short ALLCAPS roles (e.g., CEO). This avoids metadata like
+                # "see http:" or "about this picture:" counting as dialogue.
+                if 1 <= len(parts) <= 3:
+                    has_upper = any(ch.isupper() for ch in before)
+                    is_all_caps = before.isupper() and any(ch.isalpha() for ch in before)
+                    if (has_upper or is_all_caps) and "http" not in before.lower():
+                        dialogue_lines += 1
         if total_lines and dialogue_lines / total_lines >= 0.3:
             return True
     # Quotation-density heuristic.
@@ -261,6 +269,15 @@ def build_v5_discourse_map(text: str, document_id: str = "doc:0") -> SceneDetect
     if is_dialogue:
         dialogue = parse_speaker_tagged_text(text)
         turn_counts: dict[str, int] = {}
+        evasion_by_turn: dict[int, float] = {}
+
+        # Compute per-turn evasion scores (used for labeled interaction edges).
+        try:
+            ev = DialogueEvasionAnalyzer().analyze(dialogue)
+            for s in ev.scores:
+                evasion_by_turn[int(s.turn_index)] = float(s.score)
+        except Exception:
+            evasion_by_turn = {}
 
         for idx, turn in enumerate(dialogue.turns):
             speaker_id = turn.speaker_id or "speaker"
@@ -301,22 +318,97 @@ def build_v5_discourse_map(text: str, document_id: str = "doc:0") -> SceneDetect
             # Mirror update into the stored scene node metadata.
             dm.nodes[scene.id].metadata["dominant_speakers"] = scene.dominant_speakers
 
-            # Social graph stubs: undirected edges weighted by co-participation.
-            speakers = [spk for spk, _ in sorted_speakers]
-            for i, a in enumerate(speakers):
-                for b in speakers[i + 1 :]:
-                    weight = (turn_counts.get(a, 0) + turn_counts.get(b, 0)) / max(
-                        len(dialogue.turns), 1
+            # Interaction edges: derive "responds_to" from adjacency (Q -> A).
+            # This avoids the full clique co-occurrence "spaghetti" graph.
+            def _is_question_like(t: str) -> bool:
+                stripped = (t or "").strip()
+                if not stripped.endswith("?"):
+                    return False
+                lower = stripped.lower()
+                # Minimal question cues (kept lightweight).
+                return any(
+                    w in lower.split()
+                    for w in (
+                        "what",
+                        "when",
+                        "where",
+                        "why",
+                        "how",
+                        "who",
+                        "which",
+                        "do",
+                        "did",
+                        "is",
+                        "are",
+                        "can",
+                        "could",
+                        "will",
+                        "would",
+                        "should",
+                        "have",
+                        "has",
                     )
+                )
+
+            interaction_counts: dict[tuple[str, str], int] = {}
+            turns = dialogue.turns
+            for i in range(1, len(turns)):
+                prev = turns[i - 1]
+                cur = turns[i]
+                a = (cur.speaker_id or "speaker")
+                b = (prev.speaker_id or "speaker")
+                if a == b:
+                    continue
+
+                # If prev was a question, cur "responds_to" prev speaker.
+                if _is_question_like(prev.text or ""):
+                    meta = {
+                        "document_id": document_id,
+                        "turn_index": i,
+                        "question_turn_index": i - 1,
+                        "scene_id": scene.id,
+                    }
+                    if i in evasion_by_turn:
+                        meta["evasion_score"] = evasion_by_turn[i]
                     dm.add_edge(
                         GraphEdge(
                             source=f"speaker:{a}",
                             target=f"speaker:{b}",
-                            kind="co_occurs_in_scene",
-                            weight=weight,
-                            metadata={"scene_id": scene.id},
+                            kind="responds_to",
+                            weight=1.0,
+                            metadata=meta,
                         )
                     )
+                    interaction_counts[(a, b)] = interaction_counts.get((a, b), 0) + 1
+                else:
+                    # Generic adjacency interaction (useful when there are few questions).
+                    dm.add_edge(
+                        GraphEdge(
+                            source=f"speaker:{a}",
+                            target=f"speaker:{b}",
+                            kind="follows",
+                            weight=1.0,
+                            metadata={
+                                "document_id": document_id,
+                                "turn_index": i,
+                                "scene_id": scene.id,
+                            },
+                        )
+                    )
+                    interaction_counts[(a, b)] = interaction_counts.get((a, b), 0) + 1
+
+            # Add sparse co-occurrence only for pairs that actually interacted.
+            for (a, b), count in interaction_counts.items():
+                weight = count / max(len(turns), 1)
+                dm.add_edge(
+                    GraphEdge(
+                        source=f"speaker:{a}",
+                        target=f"speaker:{b}",
+                        kind="co_occurs_in_scene",
+                        weight=weight,
+                        metadata={"scene_id": scene.id, "interaction_count": count},
+                    )
+                )
 
             _add_agreement_edges(dm, dialogue, document_id)
             _add_inconsistency_flags(dm, dialogue)

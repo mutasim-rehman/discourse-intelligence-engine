@@ -89,6 +89,38 @@ def _parse_prose_dialogue(text: str) -> Optional[Dialogue]:
     last_named: str | None = None
     alt_toggle = 0
 
+    # Entity resolution: unify "Sherlock Holmes" and "Holmes" etc.
+    canon_by_surname: dict[str, str] = {}
+    best_display_by_id: dict[str, str] = {}
+
+    def _strip_title(label: str) -> str:
+        # Remove leading honorifics/titles to help unification.
+        return re.sub(rf"^\s*{_TITLE}\s+", "", label).strip()
+
+    def _canonicalize(label: str) -> tuple[str, str]:
+        cleaned = _strip_title(label)
+        words = [w for w in cleaned.split() if w]
+        if not words:
+            return _normalize_speaker_id(label), label
+        if len(words) >= 2:
+            surname = words[-1].lower()
+            if surname in canon_by_surname:
+                speaker_id = canon_by_surname[surname]
+            else:
+                speaker_id = _normalize_speaker_id(" ".join(words))
+                canon_by_surname[surname] = speaker_id
+            display = " ".join(words)
+        else:
+            surname = words[0].lower()
+            speaker_id = canon_by_surname.get(surname) or _normalize_speaker_id(words[0])
+            canon_by_surname.setdefault(surname, speaker_id)
+            display = words[0]
+
+        prev = best_display_by_id.get(speaker_id)
+        if prev is None or len(display) > len(prev):
+            best_display_by_id[speaker_id] = display
+        return speaker_id, best_display_by_id[speaker_id]
+
     # Iterate quoted spans in order and assign speakers.
     for m in _QUOTE_SPAN_RE.finditer(raw):
         quote_text = (m.group(2) or "").strip()
@@ -111,18 +143,27 @@ def _parse_prose_dialogue(text: str) -> Optional[Dialogue]:
                 speaker_label = m_before.group("name")
 
         if speaker_label is None:
-            speaker_label = "Speaker_A" if (alt_toggle % 2 == 0) else "Speaker_B"
-            alt_toggle += 1
+            # If we already have a named anchor, keep continuity to avoid
+            # introducing Speaker_A / Speaker_B alongside real entities.
+            if last_named:
+                speaker_label = last_named
+            else:
+                speaker_label = "Speaker_A" if (alt_toggle % 2 == 0) else "Speaker_B"
+                alt_toggle += 1
 
         speaker_label = _speaker_label_from_prose(speaker_label, last_named)
         if speaker_label not in {"Speaker_A", "Speaker_B"} and speaker_label.lower() not in {"he", "she", "they"}:
             last_named = speaker_label
 
-        speaker_id = _normalize_speaker_id(speaker_label)
+        speaker_id, display_name = _canonicalize(speaker_label)
         if speaker_id not in profiles:
             profiles[speaker_id] = SpeakerProfile(
-                speaker_id=speaker_id, display_name=speaker_label
+                speaker_id=speaker_id, display_name=display_name
             )
+        else:
+            # Upgrade to the best (usually longer) name.
+            if profiles[speaker_id].display_name and len(display_name) > len(profiles[speaker_id].display_name or ""):
+                profiles[speaker_id].display_name = display_name
 
         turn_index = len(turns_list)
         turns_list.append(
@@ -130,13 +171,39 @@ def _parse_prose_dialogue(text: str) -> Optional[Dialogue]:
                 speaker_id=speaker_id,
                 text=quote_text,
                 turn_index=turn_index,
-                display_name=speaker_label,
+                display_name=display_name,
                 role=profiles[speaker_id].role,
             )
         )
 
     if len(turns_list) < 2:
         return None
+
+    # If we discovered real named entities, collapse early Speaker_A/Speaker_B
+    # placeholders into the first two named speakers to reduce graph clutter.
+    named_ids = [
+        sid
+        for sid, prof in profiles.items()
+        if prof.display_name
+        and prof.display_name not in {"Speaker_A", "Speaker_B"}
+        and not prof.display_name.lower().startswith("speaker_")
+    ]
+    if len(named_ids) >= 2 and ("speaker_a" in profiles or "speaker_b" in profiles):
+        repl: dict[str, str] = {}
+        if "speaker_a" in profiles:
+            repl["speaker_a"] = named_ids[0]
+        if "speaker_b" in profiles:
+            repl["speaker_b"] = named_ids[1]
+
+        for t in turns_list:
+            if t.speaker_id in repl:
+                new_id = repl[t.speaker_id]
+                t.speaker_id = new_id
+                t.display_name = profiles[new_id].display_name
+
+        # Remove placeholder profiles and ensure remaining profiles align with turns.
+        profiles.pop("speaker_a", None)
+        profiles.pop("speaker_b", None)
 
     return Dialogue(turns=turns_list, speaker_profiles=profiles)
 
@@ -188,8 +255,24 @@ def _is_plausible_speaker_label(label: str) -> bool:
     l = (label or "").strip()
     if not l:
         return False
+    lower = l.lower()
+    # Reject obvious non-speaker "labels" that appear in metadata.
+    if "http" in lower or "www." in lower:
+        return False
+    if "*" in l or "|" in l:
+        return False
+    if any(ch.isdigit() for ch in l):
+        return False
+
     words = [w for w in re.split(r"\s+", l) if w]
     if len(words) == 0 or len(words) > 3:
+        return False
+
+    # Require at least one uppercase letter somewhere (or be ALLCAPS).
+    # This avoids treating lowercase prose fragments like "about this picture:" as speakers.
+    has_upper = any(ch.isupper() for ch in l)
+    is_all_caps = l.isupper() and any(ch.isalpha() for ch in l)
+    if not has_upper and not is_all_caps:
         return False
 
     # Reject common section/metadata headings.
