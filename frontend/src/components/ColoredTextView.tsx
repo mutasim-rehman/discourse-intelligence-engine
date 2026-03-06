@@ -15,6 +15,7 @@ export interface ColoredTextViewProps {
   segments: HighlightSegment[]
   activeFamilies?: HighlightFamily[]
   activeCharacterId?: string | null
+  selectedSegment?: { startIndex: number; endIndex: number } | null
 }
 
 const familyColors: Record<HighlightFamily, string> = {
@@ -29,6 +30,7 @@ export function ColoredTextView({
   segments,
   activeFamilies,
   activeCharacterId,
+  selectedSegment,
 }: ColoredTextViewProps) {
   if (!text) {
     return <p className="muted">No text to display.</p>
@@ -82,11 +84,15 @@ export function ColoredTextView({
           Math.min(chunk.segment.confidence || 0.95, 1),
         )
         const backgroundColor = baseColor.replace('OPACITY', clampedConfidence.toString())
+        const isSelected =
+          !!selectedSegment &&
+          selectedSegment.startIndex === chunk.segment.startIndex &&
+          selectedSegment.endIndex === chunk.segment.endIndex
 
         return (
           <span
             key={index}
-            className="highlight-chunk"
+            className={isSelected ? 'highlight-chunk selected' : 'highlight-chunk'}
             style={{
               backgroundColor,
             }}

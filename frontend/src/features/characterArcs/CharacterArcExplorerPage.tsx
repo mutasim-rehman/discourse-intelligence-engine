@@ -7,7 +7,6 @@ import {
   type CommonRequestPayload,
 } from '../../api/client'
 import { ColoredTextView } from '../../components/ColoredTextView'
-import { DiagramView } from '../../components/DiagramView'
 import { InputModeSelector, type InputModeValue } from '../../components/InputModeSelector'
 
 type AnalysisStatus = 'idle' | 'loading' | 'error' | 'success'
@@ -186,11 +185,6 @@ export function CharacterArcExplorerPage() {
                 activeFamilies={['arc']}
                 activeCharacterId={activeCharacterId}
               />
-            </div>
-
-            <div className="diagram-section">
-              <h2>Structure diagram</h2>
-              <DiagramView mermaidMmd={result.mermaidMmd} />
             </div>
           </div>
         </section>

@@ -1,4 +1,4 @@
-import { ChangeEvent, useState } from 'react'
+import { ChangeEvent, useRef, useState } from 'react'
 
 export type SourceType = 'raw_text' | 'file' | 'youtube'
 
@@ -18,6 +18,8 @@ export function InputModeSelector({ onChange }: InputModeSelectorProps) {
   const [rawText, setRawText] = useState('')
   const [file, setFile] = useState<File | undefined>()
   const [youtubeUrl, setYoutubeUrl] = useState('')
+  const [isDragging, setIsDragging] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const minTextLength = 40
 
@@ -70,20 +72,13 @@ export function InputModeSelector({ onChange }: InputModeSelectorProps) {
     emitChange(mode, next, file, youtubeUrl)
   }
 
-  function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
-    const nextFile = e.target.files?.[0]
-    if (!nextFile) {
-      setFile(undefined)
-      emitChange(mode, rawText, undefined, youtubeUrl)
-      return
-    }
+  function loadTextFile(nextFile: File) {
     if (!nextFile.name.toLowerCase().endsWith('.txt')) {
       setFile(undefined)
       onChange(null, false)
       return
     }
     setFile(nextFile)
-    // Read file contents client-side and treat as raw_text for the API
     const reader = new FileReader()
     reader.onload = () => {
       const contents = (reader.result as string) ?? ''
@@ -95,6 +90,16 @@ export function InputModeSelector({ onChange }: InputModeSelectorProps) {
       onChange(null, false)
     }
     reader.readAsText(nextFile, 'utf-8')
+  }
+
+  function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const nextFile = e.target.files?.[0]
+    if (!nextFile) {
+      setFile(undefined)
+      emitChange(mode, rawText, undefined, youtubeUrl)
+      return
+    }
+    loadTextFile(nextFile)
   }
 
   function handleYoutubeChange(e: ChangeEvent<HTMLInputElement>) {
@@ -149,23 +154,56 @@ export function InputModeSelector({ onChange }: InputModeSelectorProps) {
 
         {mode === 'file' && (
           <div className="field-group">
-            <label htmlFor="file-input">Upload a .txt file</label>
+            <label>Upload a .txt file</label>
+            <div
+              className={isDragging ? 'dropzone dragging' : 'dropzone'}
+              role="button"
+              tabIndex={0}
+              onClick={() => fileInputRef.current?.click()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click()
+              }}
+              onDragEnter={(e) => {
+                e.preventDefault()
+                setIsDragging(true)
+              }}
+              onDragOver={(e) => {
+                e.preventDefault()
+                setIsDragging(true)
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault()
+                setIsDragging(false)
+                const dropped = e.dataTransfer.files?.[0]
+                if (dropped) loadTextFile(dropped)
+              }}
+            >
+              <div className="dropzone-title">
+                Drag and drop your file here
+              </div>
+              <div className="dropzone-sub">
+                or click to choose a <span className="mono">.txt</span> file
+              </div>
+              {file && (
+                <div className="dropzone-file">
+                  Loaded: <strong>{file.name}</strong>
+                </div>
+              )}
+            </div>
+
             <input
+              ref={fileInputRef}
               id="file-input"
               type="file"
               accept=".txt,text/plain"
               onChange={handleFileChange}
+              style={{ display: 'none' }}
             />
-            {file && (
-              <div className="field-help file-loaded">
-                Loaded: {file.name}. Contents will be sent for analysis.
-              </div>
-            )}
-            {!file && (
-              <div className="field-help">
-                Only plain text files are supported. File contents are read in your browser.
-              </div>
-            )}
+
+            <div className="field-help">
+              File contents are read in your browser and sent as text for analysis.
+            </div>
           </div>
         )}
 
