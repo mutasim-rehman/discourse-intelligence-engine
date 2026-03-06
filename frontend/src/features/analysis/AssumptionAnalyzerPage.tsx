@@ -23,6 +23,16 @@ export function AssumptionAnalyzerPage() {
 
   const segmentsForView = useMemo(() => (result?.segments ?? []).map((s) => ({ ...s })), [result])
 
+  const assumptionSegments = useMemo(
+    () => segmentsForView.filter((s) => s.family === 'assumption'),
+    [segmentsForView],
+  )
+
+  const agendaSegments = useMemo(
+    () => segmentsForView.filter((s) => s.family === 'agenda'),
+    [segmentsForView],
+  )
+
   const fallacySegments = useMemo(
     () => segmentsForView.filter((s) => s.family === 'fallacy'),
     [segmentsForView],
@@ -167,16 +177,79 @@ export function AssumptionAnalyzerPage() {
           </div>
 
           <aside className="results-side">
-            <h2>Detected fallacies</h2>
+            <h2>Detected patterns</h2>
             <p className="muted">
-              Each item includes the fallacy type and the confidence score. Click to jump.
+              Each item shows the pattern type, its family, and confidence. Click any to jump to the text.
             </p>
 
-            {fallacySegments.length === 0 && (
-              <p className="muted">No fallacies detected.</p>
-            )}
-
             <div className="fallacy-list">
+              <strong className="muted">Assumptions</strong>
+              {assumptionSegments.length === 0 && (
+                <p className="muted">No assumptions detected.</p>
+              )}
+              {assumptionSegments.map((seg, idx) => {
+                const conf = Math.max(0, Math.min(seg.confidence ?? 0, 1))
+                const isActive =
+                  !!selectedSegment &&
+                  selectedSegment.startIndex === seg.startIndex &&
+                  selectedSegment.endIndex === seg.endIndex
+
+                return (
+                  <button
+                    type="button"
+                    key={`assumption-${seg.startIndex}-${seg.endIndex}-${idx}`}
+                    className={isActive ? 'fallacy-item active' : 'fallacy-item'}
+                    onClick={() => jumpToSegment({ startIndex: seg.startIndex, endIndex: seg.endIndex })}
+                  >
+                    <div className="fallacy-title-row">
+                      <div className="fallacy-title">Hidden assumption</div>
+                      <span className="pill">{Math.round(conf * 100)}%</span>
+                    </div>
+                    <div className="fallacy-snippet">
+                      {seg.text.length > 140 ? `${seg.text.slice(0, 140)}…` : seg.text}
+                    </div>
+                  </button>
+                )
+              })}
+
+              <strong className="muted" style={{ marginTop: '0.75rem' }}>
+                Agendas
+              </strong>
+              {agendaSegments.length === 0 && (
+                <p className="muted">No hidden agendas detected.</p>
+              )}
+              {agendaSegments.map((seg, idx) => {
+                const label = seg.subfamily || 'Hidden agenda'
+                const conf = Math.max(0, Math.min(seg.confidence ?? 0, 1))
+                const isActive =
+                  !!selectedSegment &&
+                  selectedSegment.startIndex === seg.startIndex &&
+                  selectedSegment.endIndex === seg.endIndex
+
+                return (
+                  <button
+                    type="button"
+                    key={`agenda-${seg.startIndex}-${seg.endIndex}-${idx}`}
+                    className={isActive ? 'fallacy-item active' : 'fallacy-item'}
+                    onClick={() => jumpToSegment({ startIndex: seg.startIndex, endIndex: seg.endIndex })}
+                  >
+                    <div className="fallacy-title-row">
+                      <div className="fallacy-title">{label}</div>
+                      <span className="pill">{Math.round(conf * 100)}%</span>
+                    </div>
+                    <div className="fallacy-snippet">
+                      {seg.text.length > 140 ? `${seg.text.slice(0, 140)}…` : seg.text}
+                    </div>
+                  </button>
+                )
+              })}
+
+              <strong className="muted" style={{ marginTop: '0.75rem' }}>
+                Fallacies
+              </strong>
+              {fallacySegments.length === 0 && (
+                <p className="muted">No fallacies detected.</p>
+              )}
               {fallacySegments.map((seg, idx) => {
                 const label = seg.subfamily || 'Fallacy'
                 const conf = Math.max(0, Math.min(seg.confidence ?? 0, 1))
@@ -188,7 +261,7 @@ export function AssumptionAnalyzerPage() {
                 return (
                   <button
                     type="button"
-                    key={`${seg.startIndex}-${seg.endIndex}-${idx}`}
+                    key={`fallacy-${seg.startIndex}-${seg.endIndex}-${idx}`}
                     className={isActive ? 'fallacy-item active' : 'fallacy-item'}
                     onClick={() => jumpToSegment({ startIndex: seg.startIndex, endIndex: seg.endIndex })}
                   >

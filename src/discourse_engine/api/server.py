@@ -2,18 +2,19 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import List
+import argparse
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from discourse_engine import Report, run_pipeline
+from discourse_engine import Report
 from discourse_engine.models.report import AssumptionFlag, AgendaFlag, FallacyFlag
 from discourse_engine.utils.youtube import fetch_transcript_only
 from discourse_engine.v5.mermaid import discourse_map_to_mermaid
-from discourse_engine.v5.scene_detector import build_v5_discourse_map
 from discourse_engine.v5.visualization import social_graph_view
 from discourse_engine.v6.arcs import arcs_to_view_payload
 from discourse_engine.v6.arcs_pipeline import build_character_arcs
+from discourse_engine.v6.cli import run_single_document
 
 from .models import (
     AnalyzeRequest,
@@ -75,14 +76,10 @@ def _resolve_text(req: AnalyzeRequest) -> str:
     raise HTTPException(status_code=400, detail=f"Unsupported sourceType: {req.sourceType}")
 
 
-def _build_mermaid_for_text(text: str) -> str | None:
-    """Build a Mermaid diagram string from the V5 discourse map for the given text."""
-    try:
-        result = build_v5_discourse_map(text, document_id="api:doc")
-        dm = result.discourse_map
-    except Exception:
+def _build_mermaid_for_map(dm) -> str | None:
+    """Build a Mermaid diagram string from a V5 discourse map."""
+    if dm is None:
         return None
-
     try:
         data = dm.to_dict()
         data.setdefault("views", {})
@@ -167,6 +164,38 @@ def _segments_from_report(text: str, report: Report) -> List[AnalysisSegment]:
     return segments
 
 
+def _run_all_engines(text: str, document_id: str = "api:doc") -> tuple[Report, object | None]:
+    """Run the full v6 single-document pipeline (v3+v4+v5+v6) with LLM enhancement enabled.
+
+    Mirrors the CLI behavior of `discourse-engine analyze` for a single document:
+    - Uses run_single_document to:
+      * run the base pipeline (statistics, tone, fallacies, assumptions, agendas, satire)
+      * optionally run v4 dialogue analysis and promote its signals
+      * build a v5 DiscourseMap for structural views
+    - Enables LLM enhancement via Ollama (llama3.2:3b) for assumptions and satire/irony.
+    """
+    args = argparse.Namespace(
+        # v3 narrative arc / visualization (kept off for API; can be turned on later)
+        v3=False,
+        export_viz=None,
+        # v4 dialogue promotion into main report
+        dialogue=True,
+        dialogue_json=None,
+        # LLM enhancement configuration
+        llm_enhance=True,
+        ollama_model="llama3.2:3b",
+        ollama_base="http://localhost:11434",
+    )
+
+    report, discourse_map = run_single_document(
+        text=text,
+        args=args,
+        document_id=document_id,
+        context_note=None,
+    )
+    return report, discourse_map
+
+
 @app.post("/api/analysis/discourse", response_model=DiscourseAnalysisResponse)
 def analyze_discourse(req: AnalyzeRequest) -> DiscourseAnalysisResponse:
     """Analyze a text for hidden assumptions, agendas, and logical fallacies."""
@@ -174,7 +203,8 @@ def analyze_discourse(req: AnalyzeRequest) -> DiscourseAnalysisResponse:
     if not text.strip():
         raise HTTPException(status_code=400, detail="Input text is empty after preprocessing.")
 
-    report = run_pipeline(text)
+    # Run the unified v6 single-document path with v3+v4+v5+v6 and LLM enhancement.
+    report, discourse_map = _run_all_engines(text)
     segments = _segments_from_report(text, report)
 
     color_legend: List[ColorLegendEntry] = [
@@ -183,7 +213,7 @@ def analyze_discourse(req: AnalyzeRequest) -> DiscourseAnalysisResponse:
         ColorLegendEntry(family=AnalysisFamily.FALLACY, subfamily=None, color="#fb7185"),
     ]
 
-    mermaid = _build_mermaid_for_text(text)
+    mermaid = _build_mermaid_for_map(discourse_map)
 
     return DiscourseAnalysisResponse(
         segments=segments,
@@ -200,12 +230,10 @@ def analyze_character_arcs(req: AnalyzeRequest) -> CharacterArcsResponse:
     if not text.strip():
         raise HTTPException(status_code=400, detail="Input text is empty after preprocessing.")
 
-    # Reuse the V5 discourse map and V6 character arcs pipeline.
-    try:
-        dm_result = build_v5_discourse_map(text, document_id="api:doc")
-        dm = dm_result.discourse_map
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to build discourse map: {exc}") from exc
+    # Reuse the unified v6 path to obtain a V5 discourse map.
+    _, dm = _run_all_engines(text)
+    if dm is None:
+        raise HTTPException(status_code=500, detail="Failed to build discourse map for character arcs.")
 
     char_arcs = build_character_arcs(dm, dialogue_report=None, document_id="api:doc")
     arcs_payload = arcs_to_view_payload(char_arcs)
@@ -249,7 +277,7 @@ def analyze_character_arcs(req: AnalyzeRequest) -> CharacterArcsResponse:
 
         # Optionally, events could become additional segments in the future.
 
-    mermaid = _build_mermaid_for_text(text)
+    mermaid = _build_mermaid_for_map(dm)
 
     return CharacterArcsResponse(
         characters=characters,
