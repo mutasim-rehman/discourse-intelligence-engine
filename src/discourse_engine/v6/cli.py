@@ -24,7 +24,8 @@ from discourse_engine.models.report import AgendaFlag, Report
 from discourse_engine.v5.models import DiscourseMap
 from discourse_engine.v5.library import build_library_map
 from discourse_engine.v5.scene_detector import build_v5_discourse_map
-from discourse_engine.v5.visualization import export_discourse_map
+from discourse_engine.v5.visualization import export_discourse_map, social_graph_view
+from discourse_engine.v5.mermaid import discourse_map_to_mermaid
 from discourse_engine.v6.aggregator import export_library_persona_report
 
 
@@ -100,6 +101,24 @@ def _resolve_library_report_path(
     if default_dir_from_v5:
         return os.path.join(default_dir_from_v5, "library_report.json")
     return None
+
+
+def _sidecar_mermaid_path(json_path: str) -> str:
+    p = Path(json_path)
+    if p.suffix.lower() == ".json":
+        return str(p.with_suffix(".mmd"))
+    return str(p) + ".mmd"
+
+
+def _export_mermaid_for_map(dm: DiscourseMap, json_export_path: str) -> str:
+    data = dm.to_dict()
+    data.setdefault("views", {})
+    data["views"]["social_graph"] = social_graph_view(dm)
+    mermaid = discourse_map_to_mermaid(data)
+    mmd_path = _sidecar_mermaid_path(json_export_path)
+    Path(mmd_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(mmd_path).write_text(mermaid, encoding="utf-8")
+    return mmd_path
 
 
 def add_analyze_subparser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -185,8 +204,8 @@ def add_analyze_subparser(subparsers: argparse._SubParsersAction[argparse.Argume
         "--export",
         action="store_true",
         help=(
-            "Convenience flag for exporting a V5 discourse map JSON to the 'exports/' "
-            "folder with an auto-generated filename."
+            "Convenience flag for exporting a V5 discourse map JSON (and Mermaid .mmd) "
+            "to the 'exports/' folder with an auto-generated filename."
         ),
     )
 
@@ -216,6 +235,9 @@ def run_analyze_from_args(args: argparse.Namespace) -> int:
         if discourse_map is not None and export_path:
             export_discourse_map(discourse_map, export_path)
             print(f"\nExported v5 discourse map to {export_path}", file=sys.stderr)
+            if getattr(args, "export", False):
+                mmd_path = _export_mermaid_for_map(discourse_map, export_path)
+                print(f"Exported mermaid graph to {mmd_path}", file=sys.stderr)
 
         return 0
 
@@ -248,6 +270,9 @@ def run_analyze_from_args(args: argparse.Namespace) -> int:
                 f"\nExported v5 library discourse map to {export_path}",
                 file=sys.stderr,
             )
+            if getattr(args, "export", False):
+                mmd_path = _export_mermaid_for_map(library_map, export_path)
+                print(f"Exported mermaid graph to {mmd_path}", file=sys.stderr)
         else:
             # No export requested; still useful to know what happened.
             print(
@@ -312,6 +337,9 @@ def run_analyze_from_args(args: argparse.Namespace) -> int:
     if discourse_map is not None and export_path:
         export_discourse_map(discourse_map, export_path)
         print(f"\nExported v5 discourse map to {export_path}", file=sys.stderr)
+        if getattr(args, "export", False):
+            mmd_path = _export_mermaid_for_map(discourse_map, export_path)
+            print(f"Exported mermaid graph to {mmd_path}", file=sys.stderr)
 
     return 0
 
