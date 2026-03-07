@@ -542,6 +542,105 @@ input:focus-visible {
   font-weight: 500;
 }
 
+/* Human-readable journey */
+.arc-journey-summary {
+  margin-top: 0.75rem;
+  padding: 1rem 1.1rem;
+  background: rgba(21, 195, 154, 0.06);
+  border: 1px solid rgba(21, 195, 154, 0.2);
+  border-radius: 0.75rem;
+}
+
+.arc-journey-text {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.arc-trend-block {
+  margin-top: 1.25rem;
+}
+
+.arc-trend-hint {
+  font-size: 0.8rem;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.arc-trend-chart {
+  height: 56px;
+  width: 100%;
+  max-width: 420px;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  color: var(--accent);
+}
+
+.arc-trend-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.arc-phases {
+  margin-top: 1rem;
+}
+
+.arc-phases-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.arc-phase-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.arc-phase-pct {
+  min-width: 2.5rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.arc-phase-badge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(21, 195, 154, 0.15);
+  color: var(--text);
+  font-weight: 500;
+  font-size: 0.85rem;
+}
+
+.arc-phase-authority {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.arc-milestones {
+  margin-top: 1rem;
+}
+
+.arc-milestones-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.arc-milestone-item {
+  padding: 0.4rem 0;
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--accent);
+  margin-bottom: 0.4rem;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
 .results-side {
   border-radius: 1rem;
   border: 1px solid var(--border);

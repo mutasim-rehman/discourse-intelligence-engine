@@ -7,6 +7,13 @@ import {
   type DocumentArcsJson,
   type DocumentCharacterArc,
 } from '../../api/client'
+import {
+  authorityToPhrase,
+  buildJourneySummary,
+  getMilestoneLabel,
+  getPhaseLabel,
+  getStrategyBadge,
+} from './arcTranslations'
 import { ColoredTextView } from '../../components/ColoredTextView'
 import { InputModeSelector, type InputModeValue } from '../../components/InputModeSelector'
 
@@ -271,57 +278,114 @@ export function CharacterArcExplorerPage() {
 
             {activeArc && (
               <div className="arc-detail">
-                <h2>Arc: {activeArc.display_name ?? activeCharacterId}</h2>
-                <p className="muted">
-                  Timeline from document_arcs.json — position 0–1, metrics per point, and turning-point events.
-                </p>
-                <div className="arc-timeline">
-                  <h3>Points</h3>
-                  {activeArc.points.length === 0 ? (
-                    <p className="muted">No points for this character.</p>
-                  ) : (
-                    <ol className="arc-points-list">
+                <h2>Character journey: {activeArc.display_name ?? activeCharacterId}</h2>
+
+                <div className="arc-journey-summary">
+                  <p className="arc-journey-text">
+                    {buildJourneySummary(
+                      activeArc.display_name ?? activeCharacterId ?? 'This character',
+                      activeArc.points ?? [],
+                      activeArc.events ?? [],
+                    )}
+                  </p>
+                </div>
+
+                {activeArc.points && activeArc.points.length > 0 && (
+                  <div className="arc-trend-block">
+                    <h3>Trend</h3>
+                    <p className="muted arc-trend-hint">
+                      Up = gaining influence · Down = stepping back or interrupted
+                    </p>
+                    <div className="arc-trend-chart" role="img" aria-label="Authority over time">
+                      {(() => {
+                        const sorted = [...activeArc.points].sort(
+                          (a, b) => (a.position ?? 0) - (b.position ?? 0),
+                        )
+                        const width = 100
+                        const height = 48
+                        const padding = 4
+                        const xs = sorted.map((p) => padding + (Number(p.position) ?? 0) * (width - 2 * padding))
+                        const auths = sorted.map(
+                          (p) =>
+                            Number((p.metrics as Record<string, unknown>)?.authority_score ?? 0),
+                        )
+                        const maxA = Math.max(...auths, 0.01)
+                        const ys = auths.map(
+                          (a) =>
+                            height - padding - (a / maxA) * (height - 2 * padding),
+                        )
+                        const pathD = xs
+                          .map((x, i) => `${i === 0 ? 'M' : 'L'} ${x} ${ys[i]}`)
+                          .join(' ')
+                        return (
+                          <svg
+                            className="arc-trend-svg"
+                            viewBox={`0 0 ${width} ${height}`}
+                            preserveAspectRatio="none"
+                          >
+                            <path d={pathD} fill="none" stroke="currentColor" strokeWidth="1.5" />
+                          </svg>
+                        )
+                      })()}
+                    </div>
+                  </div>
+                )}
+
+                {activeArc.points && activeArc.points.length > 0 && (
+                  <div className="arc-phases">
+                    <h3>Phases</h3>
+                    <ul className="arc-phases-list">
                       {activeArc.points
                         .slice()
                         .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
                         .map((pt, i) => {
                           const metrics = (pt.metrics ?? {}) as Record<string, unknown>
-                          const tactic = metrics.tactic_label ?? '—'
-                          const authority = metrics.authority_score ?? '—'
+                          const auth = Number(metrics.authority_score ?? 0)
+                          const tactic = String(metrics.tactic_label ?? 'Fact-based')
+                          const badge = getStrategyBadge(tactic)
+                          const phase = getPhaseLabel(Number(pt.position), auth)
+                          const phrase = authorityToPhrase(auth)
                           return (
-                            <li key={i} className="arc-point-item">
-                              <span className="arc-point-position">
-                                {(Number(pt.position) * 100).toFixed(0)}%
+                            <li key={i} className="arc-phase-item">
+                              <span className="arc-phase-pct">
+                                {Math.round(Number(pt.position) * 100)}%
                               </span>
-                              <span className="arc-point-metrics">
-                                tactic: {String(tactic)} · authority: {String(authority)}
+                              <span className="arc-phase-badge" title={tactic}>
+                                {badge}
+                              </span>
+                              <span className="arc-phase-authority" title={`Authority: ${auth.toFixed(2)}`}>
+                                {phrase}
                               </span>
                             </li>
                           )
                         })}
-                    </ol>
-                  )}
-                </div>
-                <div className="arc-events">
-                  <h3>Events (turning points)</h3>
-                  {activeArc.events.length === 0 ? (
-                    <p className="muted">No events for this character.</p>
-                  ) : (
-                    <ol className="arc-events-list">
+                    </ul>
+                  </div>
+                )}
+
+                {activeArc.events && activeArc.events.length > 0 && (
+                  <div className="arc-milestones">
+                    <h3>Turning points</h3>
+                    <ul className="arc-milestones-list">
                       {activeArc.events
                         .slice()
                         .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
                         .map((ev, i) => (
-                          <li key={i} className="arc-event-item">
-                            <span className="arc-event-position">
-                              {(Number(ev.position) * 100).toFixed(0)}%
-                            </span>
-                            <span className="arc-event-label">{ev.label}</span>
+                          <li key={i} className="arc-milestone-item">
+                            {getMilestoneLabel(
+                              ev,
+                              activeArc.display_name ?? activeCharacterId ?? 'Character',
+                            )}
                           </li>
                         ))}
-                    </ol>
+                    </ul>
+                  </div>
+                )}
+
+                {(!activeArc.points || activeArc.points.length === 0) &&
+                  (!activeArc.events || activeArc.events.length === 0) && (
+                    <p className="muted">No arc data for this character in this document.</p>
                   )}
-                </div>
               </div>
             )}
           </div>
