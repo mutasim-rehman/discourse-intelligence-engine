@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from discourse_engine import Report
 from discourse_engine.models.report import AssumptionFlag, AgendaFlag, FallacyFlag
-from discourse_engine.utils.youtube import fetch_transcript_only
+from discourse_engine.utils.youtube import fetch_transcript_only, get_video_metadata
 from discourse_engine.v5.mermaid import discourse_map_to_mermaid
 from discourse_engine.v5.visualization import social_graph_view
 from discourse_engine.v6.arcs import arcs_to_view_payload
@@ -26,6 +26,7 @@ from .models import (
     ColorLegendEntry,
     DiscourseAnalysisResponse,
     SourceType,
+    YouTubeVideoMetadata,
 )
 
 
@@ -137,7 +138,7 @@ def _segments_from_report(text: str, report: Report) -> List[AnalysisSegment]:
                 endIndex=end,
                 text=text[start:end],
                 family=AnalysisFamily.AGENDA,
-                subfamily=str(flag.family or flag.technique or "agenda"),
+                subfamily=str(flag.technique or flag.family or "agenda"),
                 confidence=float(flag.confidence or 0.7),
             )
         )
@@ -215,11 +216,25 @@ def analyze_discourse(req: AnalyzeRequest) -> DiscourseAnalysisResponse:
 
     mermaid = _build_mermaid_for_map(discourse_map)
 
+    youtube_video = None
+    if req.sourceType == SourceType.YOUTUBE and req.youtubeUrl:
+        try:
+            meta = get_video_metadata(req.youtubeUrl)
+            if meta.get("video_id") and meta.get("thumbnail_url"):
+                youtube_video = YouTubeVideoMetadata(
+                    videoId=meta["video_id"],
+                    title=meta.get("title"),
+                    thumbnailUrl=meta["thumbnail_url"],
+                )
+        except Exception:
+            pass
+
     return DiscourseAnalysisResponse(
         segments=segments,
         colorLegend=color_legend,
         mermaidMmd=mermaid,
         originalText=text,
+        youtubeVideo=youtube_video,
     )
 
 
@@ -235,7 +250,15 @@ def analyze_character_arcs(req: AnalyzeRequest) -> CharacterArcsResponse:
     if dm is None:
         raise HTTPException(status_code=500, detail="Failed to build discourse map for character arcs.")
 
-    char_arcs = build_character_arcs(dm, dialogue_report=None, document_id="api:doc")
+    # Run v4 dialogue parsing so we get turn-based points and events (novels, transcripts, etc.).
+    dialogue_report = None
+    try:
+        from discourse_engine.v4.dialogue_pipeline import run_dialogue_from_text
+        dialogue_report = run_dialogue_from_text(text)
+    except Exception:
+        pass
+
+    char_arcs = build_character_arcs(dm, dialogue_report=dialogue_report, document_id="api:doc")
     arcs_payload = arcs_to_view_payload(char_arcs)
 
     characters: List[CharacterSummary] = []
@@ -279,11 +302,25 @@ def analyze_character_arcs(req: AnalyzeRequest) -> CharacterArcsResponse:
 
     mermaid = _build_mermaid_for_map(dm)
 
+    youtube_video = None
+    if req.sourceType == SourceType.YOUTUBE and req.youtubeUrl:
+        try:
+            meta = get_video_metadata(req.youtubeUrl)
+            if meta.get("video_id") and meta.get("thumbnail_url"):
+                youtube_video = YouTubeVideoMetadata(
+                    videoId=meta["video_id"],
+                    title=meta.get("title"),
+                    thumbnailUrl=meta["thumbnail_url"],
+                )
+        except Exception:
+            pass
+
     return CharacterArcsResponse(
         characters=characters,
         arcs=arc_segments,
         documentArcsJson=arcs_payload,
         mermaidMmd=mermaid,
         originalText=text,
+        youtubeVideo=youtube_video,
     )
 

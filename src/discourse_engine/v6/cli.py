@@ -473,7 +473,7 @@ def run_single_document(
                         existing_sentences.add(key)
                         report.logical_fallacy_flags.append(flag)
 
-            # Topic escalation: if key entities are dodged and never resolved, flag Intentional Topic Suppression.
+            # Topic escalation: if key entities are dodged and never resolved, flag as Red Herring / Diversion.
             topics = TopicTracker().analyze(dialogue)
             for ent in topics.entities:
                 if ent.consecutive_evasions >= 1:
@@ -484,7 +484,7 @@ def run_single_document(
                     report.hidden_agenda_flags.append(
                         AgendaFlag(
                             family="Intentional evasion",
-                            technique="Topic suppression",
+                            technique="Red Herring / Diversion",
                             pattern_hint=pattern_hint,
                             sentence=topics.summary,
                             confidence=0.80,
@@ -506,12 +506,46 @@ def run_single_document(
                 report.hidden_agenda_flags.append(
                     AgendaFlag(
                         family="Intentional evasion",
-                        technique="Answer reframing / non-answer",
+                        technique="Non-Answer / Reframing",
                         pattern_hint=summary,
                         sentence=summary,
                         confidence=0.75,
                     )
                 )
+
+            # Derive Ad Hominem / Silencing from power dynamics: high-dominance turn that
+            # silences or dismisses (e.g. "Be quiet. Adults are speaking.") — link dominance
+            # to fallacy label when factual overlap is absent.
+            from discourse_engine.models.report import FallacyFlag
+            dominance_by_speaker = {}
+            if dialogue_report.power_dynamics and dialogue_report.power_dynamics.speakers:
+                for m in dialogue_report.power_dynamics.speakers:
+                    dominance_by_speaker[m.speaker_id] = m.dominance_score
+            evasion_turn_indices = set()
+            if dialogue_report.evasion and dialogue_report.evasion.scores:
+                for s in dialogue_report.evasion.scores:
+                    if s.score >= 0.6:
+                        evasion_turn_indices.add(s.turn_index)
+            silencing_phrases = ("be quiet", "adults are speaking", "don't speak", "when we speak")
+            existing_fallacy_sentences = {f.sentence.strip().lower()[:200] for f in report.logical_fallacy_flags}
+            for turn in dialogue.turns:
+                if not turn.text:
+                    continue
+                tlower = turn.text.strip().lower()
+                dom = dominance_by_speaker.get(turn.speaker_id, 0)
+                if dom >= 0.7 and any(p in tlower for p in silencing_phrases):
+                    key = tlower[:200]
+                    if key not in existing_fallacy_sentences:
+                        existing_fallacy_sentences.add(key)
+                        report.logical_fallacy_flags.append(
+                            FallacyFlag(
+                                name="Ad Hominem / Silencing",
+                                pattern_hint="Power tactic: dominance + silencing (low factual overlap)",
+                                sentence=turn.text.strip(),
+                                confidence=0.75,
+                                fallacy_type="ad_hominem",
+                            )
+                        )
         except Exception:
             # Dialogue analysis is best-effort; do not fail the base report.
             pass

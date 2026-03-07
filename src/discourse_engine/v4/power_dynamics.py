@@ -37,7 +37,7 @@ CERTAINTY_MODALS = {"must", "will", "shall", "cannot"}
 
 def _intensity_score(text: str) -> float:
     lower = text.lower()
-    words = re.findall(r"\\b\\w+\\b", lower)
+    words = re.findall(r"\b\w+\b", lower)
     if not words:
         return 0.0
     count = sum(1 for w in words if w in INTENSITY_TERMS)
@@ -49,7 +49,7 @@ def _dominance_score(text: str) -> float:
     words = lower.split()
     if not words:
         return 0.0
-    count = sum(1 for w in words if re.sub(r"\\W", "", w) in DOMINANCE_TERMS)
+    count = sum(1 for w in words if re.sub(r"\W", "", w) in DOMINANCE_TERMS)
     return min(count / len(words) * 5, 1.0)
 
 
@@ -58,7 +58,7 @@ def _certainty_score(text: str) -> float:
     words = lower.split()
     if not words:
         return 0.0
-    count = sum(1 for w in words if re.sub(r"\\W", "", w) in CERTAINTY_MODALS)
+    count = sum(1 for w in words if re.sub(r"\W", "", w) in CERTAINTY_MODALS)
     return min(count / len(words) * 8, 1.0)
 
 

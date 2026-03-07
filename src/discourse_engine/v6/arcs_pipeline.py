@@ -9,10 +9,12 @@ into:
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, Tuple
+from typing import Any, Dict, Iterable, Tuple
 
 from discourse_engine.analyzers.logical_fallacy import LogicalFallacyAnalyzer
+from discourse_engine.v4.dialogue_pipeline import dialogue_from_turns
 from discourse_engine.v4.models import DialogueReport
+from discourse_engine.v4.power_dynamics import PowerDynamicsAnalyzer
 from discourse_engine.v5.models import DiscourseMap, GraphEdge
 from discourse_engine.v6.arcs import (
     ArcEvent,
@@ -60,14 +62,6 @@ def build_character_arcs(
                 for s in dialogue_report.evasion.scores:
                     evasion_by_turn[int(s.turn_index)] = float(s.score)
 
-            power_by_speaker: dict[str, tuple[float, float]] = {}
-            if dialogue_report.power_dynamics:
-                for m in dialogue_report.power_dynamics.speakers:
-                    power_by_speaker[m.speaker_id] = (
-                        float(m.dominance_score),
-                        float(m.authority_score),
-                    )
-
             fallacy_analyzer = LogicalFallacyAnalyzer()
             fallacies_by_turn: dict[int, Dict[str, int]] = {}
             for t in turns:
@@ -84,6 +78,7 @@ def build_character_arcs(
             max_segments = 10
             n_segments = min(max_segments, total_turns) or 1
             seg_size = max(1, total_turns // n_segments)
+            power_analyzer = PowerDynamicsAnalyzer()
 
             # For each segment and speaker, aggregate metrics.
             per_speaker_segments: Dict[str, list[CharacterArcPoint]] = {}
@@ -102,6 +97,19 @@ def build_character_arcs(
                     (start + end - 1) // 2, total_turns
                 )
 
+                # Segment-local authority/dominance: compute from ONLY this segment's turns.
+                power_in_segment: Dict[str, tuple[float, float]] = {}
+                try:
+                    segment_dialogue = dialogue_from_turns(segment_turns)
+                    segment_power = power_analyzer.analyze(segment_dialogue)
+                    for m in segment_power.speakers:
+                        power_in_segment[m.speaker_id] = (
+                            float(m.dominance_score),
+                            float(m.authority_score),
+                        )
+                except Exception:
+                    pass
+
                 # Aggregate metrics per speaker within this segment.
                 per_speaker_data: Dict[str, Dict[str, Any]] = {}
                 for t in segment_turns:
@@ -119,7 +127,7 @@ def build_character_arcs(
                             "fallacy_counts": {},
                         },
                     )
-                    dom, auth = power_by_speaker.get(sid, (0.0, 0.0))
+                    dom, auth = power_in_segment.get(sid, (0.0, 0.0))
                     data["dom_sum"] += dom
                     data["auth_sum"] += auth
                     data["count"] += 1
@@ -150,14 +158,15 @@ def build_character_arcs(
                     else:
                         seg_evasion = 0.0
 
-                    # Dominant tactic label for this segment.
+                    # Tactic: only assign fallacy label when segment has at least one fallacy hit.
                     fall_counts = data["fallacy_counts"]
                     tactic_label = "Fact-based"
                     if fall_counts:
-                        dominant_ftype, _ = max(
+                        dominant_ftype, dominant_count = max(
                             fall_counts.items(), key=lambda kv: kv[1]
                         )
-                        tactic_label = dominant_ftype
+                        if dominant_count > 0:
+                            tactic_label = dominant_ftype
 
                     metrics = {
                         "segment_index": seg_idx,
@@ -213,8 +222,40 @@ def build_character_arcs(
                 )
                 arc.points.extend(points)
 
-            # Power pivots and evasion spikes (turning points)
-            # Examine segments across all speakers at each segment index.
+            # Slope-based turning points: authority shift, tactic change, power pivot, evasion spike.
+            # 1) Per-speaker: fire event when |authority_delta| >= 0.15 or tactic changes.
+            for sid, points in per_speaker_segments.items():
+                points.sort(key=lambda p: p.position)
+                for p in points:
+                    auth_delta = float(p.metrics.get("authority_delta", 0.0))
+                    tactic_from = p.metrics.get("tactic_changed_from")
+                    if abs(auth_delta) >= 0.15:
+                        label = "authority_shift_up" if auth_delta > 0 else "authority_shift_down"
+                        arcs[sid].events.append(
+                            ArcEvent(
+                                position=p.position,
+                                label=label,
+                                details={
+                                    "segment_index": p.metrics.get("segment_index"),
+                                    "authority_delta": auth_delta,
+                                    "authority_score": p.metrics.get("authority_score"),
+                                },
+                            )
+                        )
+                    if tactic_from is not None:
+                        arcs[sid].events.append(
+                            ArcEvent(
+                                position=p.position,
+                                label="tactic_shift",
+                                details={
+                                    "segment_index": p.metrics.get("segment_index"),
+                                    "from": tactic_from,
+                                    "to": p.metrics.get("tactic_label"),
+                                },
+                            )
+                        )
+
+            # 2) Cross-speaker: power pivot (leader change) and evasion spike.
             segments_by_idx: Dict[int, Dict[str, CharacterArcPoint]] = {}
             for sid, arc in arcs.items():
                 for p in arc.points:
@@ -222,11 +263,9 @@ def build_character_arcs(
                     if seg_idx >= 0:
                         segments_by_idx.setdefault(seg_idx, {})[sid] = p
 
-            # Track global best authority so far for pivot detection.
-            best_auth_so_far: Dict[str, float] = {}
+            prev_leader_sid: str | None = None
             for seg_idx in sorted(segments_by_idx.keys()):
                 seg_points = segments_by_idx[seg_idx]
-                # Determine current leader in this segment.
                 leader_sid = None
                 leader_auth = 0.0
                 for sid, p in seg_points.items():
@@ -234,12 +273,7 @@ def build_character_arcs(
                     if leader_sid is None or a > leader_auth:
                         leader_sid, leader_auth = sid, a
 
-                if leader_sid is None:
-                    continue
-
-                prev_best = best_auth_so_far.get(leader_sid, 0.0)
-                if leader_auth >= prev_best + 0.2 and leader_auth >= 0.5:
-                    # Mark a power pivot for this speaker.
+                if leader_sid is not None and prev_leader_sid is not None and leader_sid != prev_leader_sid:
                     arcs[leader_sid].events.append(
                         ArcEvent(
                             position=seg_points[leader_sid].position,
@@ -247,19 +281,16 @@ def build_character_arcs(
                             details={
                                 "segment_index": seg_idx,
                                 "authority": leader_auth,
-                                "previous_best": prev_best,
+                                "previous_leader": prev_leader_sid,
                             },
                         )
                     )
-                    best_auth_so_far[leader_sid] = leader_auth
-                else:
-                    best_auth_so_far[leader_sid] = max(prev_best, leader_auth)
+                prev_leader_sid = leader_sid
 
-                # Evasion turning points (Mask Slip / Turning Point).
                 for sid, p in seg_points.items():
                     ev = float(p.metrics.get("evasion_score", 0.0))
                     ev_delta = float(p.metrics.get("evasion_delta", 0.0))
-                    if ev >= 0.8 and ev_delta >= 0.2:
+                    if ev >= 0.6 and ev_delta >= 0.15:
                         arcs[sid].events.append(
                             ArcEvent(
                                 position=p.position,

@@ -48,14 +48,6 @@ class CharacterArcSegment(BaseModel):
     colorFamily: Optional[str] = None
 
 
-class CharacterArcsResponse(BaseModel):
-    characters: List[CharacterSummary]
-    arcs: List[CharacterArcSegment]
-    documentArcsJson: dict
-    mermaidMmd: Optional[str]
-    originalText: str
-
-
 class AnalysisFamily(str, Enum):
     ASSUMPTION = "assumption"
     AGENDA = "agenda"
@@ -77,9 +69,25 @@ class ColorLegendEntry(BaseModel):
     color: str
 
 
+class YouTubeVideoMetadata(BaseModel):
+    """Video metadata when source is YouTube (for thumbnail and title display)."""
+    videoId: str
+    title: Optional[str] = None
+    thumbnailUrl: Optional[str] = None
+
+
 class DiscourseAnalysisResponse(BaseModel):
     segments: List[AnalysisSegment]
     colorLegend: List[ColorLegendEntry]
     mermaidMmd: Optional[str]
     originalText: str
+    youtubeVideo: Optional[YouTubeVideoMetadata] = None
 
+
+class CharacterArcsResponse(BaseModel):
+    characters: List[CharacterSummary]
+    arcs: List[CharacterArcSegment]
+    documentArcsJson: dict
+    mermaidMmd: Optional[str]
+    originalText: str
+    youtubeVideo: Optional[YouTubeVideoMetadata] = None

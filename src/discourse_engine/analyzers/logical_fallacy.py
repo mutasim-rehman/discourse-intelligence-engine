@@ -197,6 +197,11 @@ FALSE_DILEMMA_OR_CHOICE_PATTERN = re.compile(
     r"\b(?:are we going to|shall we|trust|focus on|talk about)\s+.+?\s+or\s+(?:are we|your|we)\s+",
     re.IGNORECASE,
 )
+# "Are we a X or a Y?" / "company of bookkeepers, or ... visionaries" binary framing
+FALSE_DILEMMA_ARE_WE_PATTERN = re.compile(
+    r"\bare we\s+(?:a\s+)?\w+(?:\s+\w+)*\s*,\s*or\s+(?:a\s+)?\w+(?:\s+\w+)*",
+    re.IGNORECASE,
+)
 
 
 # Appeal to fear: threat language
@@ -215,6 +220,7 @@ FEAR_TERMS = {
 # - "they want to destroy..."
 # - "can't even manage his own X"
 # - "why should we listen to a man whose ... is in shambles"
+# - Silencing / authority dismissal: "be quiet", "adults are speaking", "don't speak"
 ATTACK_PATTERNS = [
     re.compile(r"\bthey\s+want\s+to\s+\w+", re.IGNORECASE),
     re.compile(
@@ -225,6 +231,13 @@ ATTACK_PATTERNS = [
         r"\bwhy\s+should\s+we\s+listen\s+to\s+[^.?!]*\bwhose\b[^.?!]*(?:shambles|mess|ruin|disaster|chaos)\b",
         re.IGNORECASE,
     ),
+]
+# Silencing / ad hominem by authority: dismissing person instead of argument
+SILENCING_AD_HOMINEM_PATTERNS = [
+    re.compile(r"\bbe\s+quiet\b[^.!?]*[.!?]", re.IGNORECASE),
+    re.compile(r"\b(?:adults?|grown.?ups?)\s+are\s+speaking\b", re.IGNORECASE),
+    re.compile(r"\bdon'?t\s+speak\b", re.IGNORECASE),
+    re.compile(r"\b(?:when|while)\s+[^.!?]*\s+speak(?:ing|s)?\b", re.IGNORECASE),
 ]
 
 # Appeal to tradition: "we have always done it this way", "tradition is the bedrock..."
@@ -259,8 +272,9 @@ class LogicalFallacyAnalyzer:
         # False dilemma patterns
         m = FALSE_DILEMMA_PATTERN.search(text)
         if m:
-            snippet = m.group(0)
-            if not _is_genuine_dichotomy(snippet):
+            # Use full sentence for dichotomy check so we see the clause after "or"
+            full_sentence = _sentence_at(m)
+            if not _is_genuine_dichotomy(full_sentence):
                 base_conf = 0.8
                 extra = 1 if "no middle ground" in lower else 0
                 conf = fallacy_confidence(base_conf, extra_signals=extra)
@@ -268,7 +282,7 @@ class LogicalFallacyAnalyzer:
                     FallacyFlag(
                         "False Dilemma",
                         "pattern: either X or Y (non-exhaustive choices)",
-                        _sentence_at(m),
+                        full_sentence,
                         confidence=conf,
                         fallacy_type="false_dilemma",
                     )
@@ -289,18 +303,31 @@ class LogicalFallacyAnalyzer:
 
         m = FALSE_DILEMMA_OR_CHOICE_PATTERN.search(text)
         if m:
-            snippet = m.group(0)
-            if not _is_genuine_dichotomy(snippet):
+            full_sentence = _sentence_at(m)
+            if not _is_genuine_dichotomy(full_sentence):
                 conf = fallacy_confidence(0.72)
                 flags.append(
                     FallacyFlag(
                         "False Dilemma",
                         "forced choice: 'Are we going to X or Y?' / 'trust X or Y'",
-                        _sentence_at(m),
+                        full_sentence,
                         confidence=conf,
                         fallacy_type="false_dilemma",
                     )
                 )
+
+        m = FALSE_DILEMMA_ARE_WE_PATTERN.search(text)
+        if m:
+            conf = fallacy_confidence(0.72)
+            flags.append(
+                FallacyFlag(
+                    "False Dilemma",
+                    "binary framing: 'Are we a X or a Y?' (no middle ground)",
+                    _sentence_at(m),
+                    confidence=conf,
+                    fallacy_type="false_dilemma",
+                )
+            )
 
         # Appeal to fear
         if any(t in lower for t in FEAR_TERMS):
@@ -336,6 +363,22 @@ class LogicalFallacyAnalyzer:
                     FallacyFlag(
                         "Ad Hominem / Attack",
                         pattern_desc,
+                        _sentence_at(m),
+                        confidence=conf,
+                        fallacy_type="ad_hominem",
+                    )
+                )
+                break
+
+        # Ad hominem via silencing / authority dismissal ("Be quiet. Adults are speaking.")
+        for pat in SILENCING_AD_HOMINEM_PATTERNS:
+            m = pat.search(text)
+            if m:
+                conf = fallacy_confidence(0.75)
+                flags.append(
+                    FallacyFlag(
+                        "Ad Hominem / Silencing",
+                        "dismissing person or silencing instead of addressing argument",
                         _sentence_at(m),
                         confidence=conf,
                         fallacy_type="ad_hominem",
