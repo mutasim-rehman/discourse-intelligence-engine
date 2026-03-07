@@ -422,6 +422,57 @@ input:focus-visible {
   gap: 1.5rem;
 }
 
+.youtube-video-card {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid var(--border);
+  background-color: var(--surface);
+  box-shadow: var(--shadow);
+  text-decoration: none;
+  color: var(--text);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.youtube-video-card:hover {
+  border-color: rgba(21, 195, 154, 0.4);
+  box-shadow: 0 2px 12px rgba(21, 195, 154, 0.12);
+}
+
+.youtube-video-thumb {
+  width: 160px;
+  min-width: 160px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 0.5rem;
+  background: var(--border);
+}
+
+.youtube-video-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.youtube-video-title {
+  font-weight: 600;
+  font-size: 1rem;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.youtube-video-link-hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 .results-main {
   border-radius: 1rem;
   border: 1px solid var(--border);
@@ -433,6 +484,62 @@ input:focus-visible {
 .results-main h2 {
   margin-top: 0;
   margin-bottom: 0.75rem;
+}
+
+.results-main h2:not(:first-child) {
+  margin-top: 1.5rem;
+}
+
+.arc-detail {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.arc-detail h2 {
+  margin-top: 0;
+}
+
+.arc-detail h3 {
+  font-size: 0.95rem;
+  margin: 0.75rem 0 0.35rem;
+  color: var(--muted);
+}
+
+.arc-timeline,
+.arc-events {
+  margin-top: 0.5rem;
+}
+
+.arc-points-list,
+.arc-events-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  list-style: decimal;
+}
+
+.arc-point-item,
+.arc-event-item {
+  margin-bottom: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.arc-point-position,
+.arc-event-position {
+  display: inline-block;
+  min-width: 2.5rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.arc-point-metrics {
+  margin-left: 0.5rem;
+  color: var(--text);
+}
+
+.arc-event-label {
+  margin-left: 0.5rem;
+  font-weight: 500;
 }
 
 .results-side {

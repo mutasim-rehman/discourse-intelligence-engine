@@ -146,6 +146,26 @@ export function AssumptionAnalyzerPage() {
 
       {status === 'success' && result && (
         <section className="page-section results-layout">
+          {result.youtubeVideo?.thumbnailUrl && (
+            <a
+              href={`https://www.youtube.com/watch?v=${result.youtubeVideo.videoId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="youtube-video-card"
+            >
+              <img
+                src={result.youtubeVideo.thumbnailUrl}
+                alt=""
+                className="youtube-video-thumb"
+              />
+              <div className="youtube-video-info">
+                <span className="youtube-video-title">
+                  {result.youtubeVideo.title ?? 'YouTube video'}
+                </span>
+                <span className="youtube-video-link-hint">Open on YouTube ↗</span>
+              </div>
+            </a>
+          )}
           <div className="results-main">
             <h2>Annotated text</h2>
             <div className="legend">

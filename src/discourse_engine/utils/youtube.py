@@ -1,7 +1,10 @@
 """YouTube transcript fetching utilities."""
 
+import json
 import re
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, quote
+from urllib.request import urlopen, Request
+from urllib.error import URLError, HTTPError
 
 
 def extract_video_id(url_or_id: str) -> str | None:
@@ -39,6 +42,43 @@ def extract_video_id(url_or_id: str) -> str | None:
         return match.group(1) if match else None
 
     return None
+
+
+def get_video_metadata(url_or_id: str) -> dict[str, str | None]:
+    """Fetch video title and thumbnail URL for display.
+
+    Uses YouTube oEmbed when possible; falls back to deterministic thumbnail URL
+    if oEmbed fails (e.g. private video, no network). Returns dict with keys:
+    - video_id: str
+    - title: str | None (None if oEmbed failed)
+    - thumbnail_url: str (always set from video_id if not from oEmbed)
+    """
+    video_id = extract_video_id(url_or_id)
+    if not video_id:
+        return {"video_id": "", "title": None, "thumbnail_url": None}
+
+    # Deterministic thumbnail (works even when oEmbed fails)
+    thumbnail_url = f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
+
+    canonical_url = f"https://www.youtube.com/watch?v={video_id}"
+    oembed_url = f"https://www.youtube.com/oembed?url={quote(canonical_url)}&format=json"
+    title = None
+    try:
+        req = Request(oembed_url, headers={"User-Agent": "DiscourseEngine/1.0"})
+        with urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+            title = data.get("title") or None
+            # Prefer oEmbed thumbnail when available (often higher quality)
+            if data.get("thumbnail_url"):
+                thumbnail_url = data["thumbnail_url"]
+    except (URLError, HTTPError, json.JSONDecodeError, KeyError, OSError):
+        pass
+
+    return {
+        "video_id": video_id,
+        "title": title,
+        "thumbnail_url": thumbnail_url,
+    }
 
 
 def fetch_transcript(url_or_id: str, languages: list[str] | None = None) -> tuple[str, str | None]:

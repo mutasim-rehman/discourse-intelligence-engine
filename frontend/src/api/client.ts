@@ -23,12 +23,50 @@ export interface CharacterArc {
   colorFamily?: string
 }
 
+/** Single point on a character arc timeline (from document_arcs.json). */
+export interface DocumentArcPoint {
+  document_id: string
+  scene_id?: string | null
+  turn_index?: number | null
+  position: number
+  metrics?: Record<string, unknown>
+}
+
+/** Notable event in an arc (pivot, turning point, etc.). */
+export interface DocumentArcEvent {
+  position: number
+  label: string
+  details?: Record<string, unknown>
+}
+
+/** Per-character arc from document_arcs.json. */
+export interface DocumentCharacterArc {
+  character_id: string
+  display_name?: string | null
+  points: DocumentArcPoint[]
+  events: DocumentArcEvent[]
+}
+
+/** Relationship arc (pair of characters). */
+export interface DocumentRelationshipArc {
+  pair: [string, string]
+  points: unknown[]
+  events: DocumentArcEvent[]
+}
+
+/** Shape of document_arcs.json returned by the API. */
+export interface DocumentArcsJson {
+  characters: Record<string, DocumentCharacterArc>
+  relationships?: Record<string, DocumentRelationshipArc>
+}
+
 export interface CharacterArcsResponse {
   characters: CharacterSummary[]
   arcs: CharacterArc[]
-  documentArcsJson: unknown
+  documentArcsJson: DocumentArcsJson | unknown
   mermaidMmd: string | null
   originalText: string
+  youtubeVideo?: YouTubeVideoMetadata | null
 }
 
 export type AnalysisFamily = 'assumption' | 'agenda' | 'fallacy'
@@ -48,11 +86,18 @@ export interface ColorLegendEntry {
   color: string
 }
 
+export interface YouTubeVideoMetadata {
+  videoId: string
+  title?: string | null
+  thumbnailUrl?: string | null
+}
+
 export interface DiscourseAnalysisResponse {
   segments: AnalysisSegment[]
   colorLegend: ColorLegendEntry[]
   mermaidMmd: string | null
   originalText: string
+  youtubeVideo?: YouTubeVideoMetadata | null
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL as string | undefined
