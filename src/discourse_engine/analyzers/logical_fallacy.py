@@ -200,10 +200,47 @@ FALSE_DILEMMA_OR_CHOICE_PATTERN = re.compile(
 
 
 # Appeal to fear: threat language
-FEAR_TERMS = {"collapse", "destroy", "threat", "danger", "catastrophe", "crisis"}
-# Ad hominem / attack: "they want to destroy"
+FEAR_TERMS = {
+    "collapse",
+    "destroy",
+    "threat",
+    "danger",
+    "catastrophe",
+    "crisis",
+    "dark age",
+    "dark ages",
+}
+
+# Ad hominem / attack:
+# - "they want to destroy..."
+# - "can't even manage his own X"
+# - "why should we listen to a man whose ... is in shambles"
 ATTACK_PATTERNS = [
     re.compile(r"\bthey\s+want\s+to\s+\w+", re.IGNORECASE),
+    re.compile(
+        r"\b(can't|cannot)\s+even\s+manage\s+(?:his|her|their)\s+own\s+(?:life|household|finances?)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bwhy\s+should\s+we\s+listen\s+to\s+[^.?!]*\bwhose\b[^.?!]*(?:shambles|mess|ruin|disaster|chaos)\b",
+        re.IGNORECASE,
+    ),
+]
+
+# Appeal to tradition: "we have always done it this way", "tradition is the bedrock..."
+APPEAL_TO_TRADITION_PATTERNS = [
+    re.compile(
+        r"\bwe\s+have\s+always\s+done\s+(?:things|it|this)\s+this\s+way\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\btradition\b[^.]*\b(bedrock|foundation|reason|proof|success)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bthis\s+is\s+how\s+we\s+have\s+always\s+done\s+it\b",
+        re.IGNORECASE,
+    ),
 ]
 
 
@@ -221,17 +258,21 @@ class LogicalFallacyAnalyzer:
 
         # False dilemma patterns
         m = FALSE_DILEMMA_PATTERN.search(text)
-        if m and not _is_genuine_dichotomy(text):
-            conf = fallacy_confidence(0.8)
-            flags.append(
-                FallacyFlag(
-                    "False Dilemma",
-                    "pattern: either X or Y",
-                    _sentence_at(m),
-                    confidence=conf,
-                    fallacy_type="false_dilemma",
+        if m:
+            snippet = m.group(0)
+            if not _is_genuine_dichotomy(snippet):
+                base_conf = 0.8
+                extra = 1 if "no middle ground" in lower else 0
+                conf = fallacy_confidence(base_conf, extra_signals=extra)
+                flags.append(
+                    FallacyFlag(
+                        "False Dilemma",
+                        "pattern: either X or Y (non-exhaustive choices)",
+                        _sentence_at(m),
+                        confidence=conf,
+                        fallacy_type="false_dilemma",
+                    )
                 )
-            )
 
         m = COERCIVE_CHOICE_PATTERN.search(text)
         if m:
@@ -247,17 +288,19 @@ class LogicalFallacyAnalyzer:
             )
 
         m = FALSE_DILEMMA_OR_CHOICE_PATTERN.search(text)
-        if m and not _is_genuine_dichotomy(text):
-            conf = fallacy_confidence(0.72)
-            flags.append(
-                FallacyFlag(
-                    "False Dilemma",
-                    "forced choice: 'Are we going to X or Y?' / 'trust X or Y'",
-                    _sentence_at(m),
-                    confidence=conf,
-                    fallacy_type="false_dilemma",
+        if m:
+            snippet = m.group(0)
+            if not _is_genuine_dichotomy(snippet):
+                conf = fallacy_confidence(0.72)
+                flags.append(
+                    FallacyFlag(
+                        "False Dilemma",
+                        "forced choice: 'Are we going to X or Y?' / 'trust X or Y'",
+                        _sentence_at(m),
+                        confidence=conf,
+                        fallacy_type="false_dilemma",
+                    )
                 )
-            )
 
         # Appeal to fear
         if any(t in lower for t in FEAR_TERMS):
@@ -286,10 +329,13 @@ class LogicalFallacyAnalyzer:
             m = pat.search(text)
             if m:
                 conf = fallacy_confidence(0.75)
+                pattern_desc = "personal attack used in place of argument"
+                if "they want to" in m.group(0).lower():
+                    pattern_desc = "they want to [verb] pattern"
                 flags.append(
                     FallacyFlag(
                         "Ad Hominem / Attack",
-                        "they want to [verb] pattern",
+                        pattern_desc,
                         _sentence_at(m),
                         confidence=conf,
                         fallacy_type="ad_hominem",
@@ -357,6 +403,22 @@ class LogicalFallacyAnalyzer:
                         _sentence_at(m),
                         confidence=conf,
                         fallacy_type="appeal_to_authority",
+                    )
+                )
+                break
+
+        # Appeal to tradition
+        for pat in APPEAL_TO_TRADITION_PATTERNS:
+            m = pat.search(text)
+            if m:
+                conf = fallacy_confidence(0.7)
+                flags.append(
+                    FallacyFlag(
+                        "Appeal to Tradition",
+                        "tradition or 'we have always done it this way' used as primary justification",
+                        _sentence_at(m),
+                        confidence=conf,
+                        fallacy_type="appeal_to_tradition",
                     )
                 )
                 break

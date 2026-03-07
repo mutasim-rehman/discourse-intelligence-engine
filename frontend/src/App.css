@@ -480,6 +480,28 @@ input:focus-visible {
   border-radius: 999px;
 }
 
+.legend-fallacy-types {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.legend-label {
+  font-size: 0.8rem;
+  color: var(--muted-2);
+  margin-right: 0.25rem;
+}
+
+.legend-fallacy-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 .legend-assumption {
   background-color: var(--assumption);
 }

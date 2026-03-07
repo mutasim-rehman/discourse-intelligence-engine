@@ -1,6 +1,6 @@
 import { FormEvent, useMemo, useRef, useState } from 'react'
 import { analyzeDiscourse, type CommonRequestPayload, type DiscourseAnalysisResponse } from '../../api/client'
-import { ColoredTextView, type HighlightFamily } from '../../components/ColoredTextView'
+import { ColoredTextView, fallacyTypeColors, type HighlightFamily } from '../../components/ColoredTextView'
 import { InputModeSelector, type InputModeValue } from '../../components/InputModeSelector'
 
 type AnalysisStatus = 'idle' | 'loading' | 'error' | 'success'
@@ -37,6 +37,15 @@ export function AssumptionAnalyzerPage() {
     () => segmentsForView.filter((s) => s.family === 'fallacy'),
     [segmentsForView],
   )
+
+  const distinctFallacyTypes = useMemo(() => {
+    const set = new Set<string>()
+    fallacySegments.forEach((s) => {
+      const key = (s.subfamily ?? 'fallacy').toLowerCase().replace(/\s+/g, '_')
+      set.add(key)
+    })
+    return Array.from(set)
+  }, [fallacySegments])
 
   function handleInputChange(value: InputModeValue | null, isValid: boolean) {
     setInput(value)
@@ -165,6 +174,25 @@ export function AssumptionAnalyzerPage() {
                 Logical fallacies
               </button>
             </div>
+            {activeFamilies.includes('fallacy') && distinctFallacyTypes.length > 0 && (
+              <div className="legend legend-fallacy-types">
+                <span className="legend-label">By type (opacity = confidence):</span>
+                {distinctFallacyTypes.map((key) => {
+                  const base = fallacyTypeColors[key] ?? 'rgba(255, 160, 122, 1)'
+                  const swatchColor = base.replace('OPACITY', '1')
+                  const label = key.replace(/_/g, ' ')
+                  return (
+                    <span key={key} className="legend-fallacy-type" title={label}>
+                      <span
+                        className="legend-swatch"
+                        style={{ backgroundColor: swatchColor }}
+                      />
+                      {label}
+                    </span>
+                  )
+                })}
+              </div>
+            )}
 
             <div className="text-panel" ref={textPanelRef}>
               <ColoredTextView
