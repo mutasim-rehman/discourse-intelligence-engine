@@ -290,7 +290,10 @@ def build_character_arcs(
                 for sid, p in seg_points.items():
                     ev = float(p.metrics.get("evasion_score", 0.0))
                     ev_delta = float(p.metrics.get("evasion_delta", 0.0))
-                    if ev >= 0.6 and ev_delta >= 0.15:
+                    auth_delta = float(p.metrics.get("authority_delta", 0.0))
+                    # Only fire evasion_spike when authority is dropping (or flat).
+                    # Power pivot / taking control implies lower evasion; avoid contradiction.
+                    if ev >= 0.6 and ev_delta >= 0.15 and auth_delta <= 0:
                         arcs[sid].events.append(
                             ArcEvent(
                                 position=p.position,

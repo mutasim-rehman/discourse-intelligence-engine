@@ -28,15 +28,15 @@ export const EVENT_MILESTONE_TEXT: Record<string, string> = {
   authority_shift_down: 'steps back or is interrupted',
   tactic_shift: 'changes strategy',
   power_pivot: 'takes the lead in the exchange',
-  evasion_spike: 'becomes evasive or defensive',
+  evasion_spike: 'Tactical pivot',
 }
 
 /** Authority score (0–1) → short phrase for tooltips / phases. */
 export function authorityToPhrase(auth: number): string {
-  if (auth >= 0.8) return 'Owning the room'
+  if (auth >= 0.8) return 'Leading the Discourse'
   if (auth >= 0.6) return 'In control'
   if (auth >= 0.4) return 'Holding ground'
-  if (auth >= 0.2) return 'Listening or cautious'
+  if (auth >= 0.2) return 'Observational Phase'
   return 'Silenced or sidelined'
 }
 
@@ -75,6 +75,9 @@ export function getMilestoneLabel(
   }
   if (event.label === 'authority_shift_down') {
     return `${pct}% — ${characterName} ${human}`
+  }
+  if (event.label === 'evasion_spike') {
+    return `${pct}% — Tactical pivot`
   }
   return `${pct}% — ${human}`
 }
