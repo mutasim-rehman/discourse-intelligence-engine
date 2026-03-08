@@ -17,6 +17,7 @@ export function AssumptionAnalyzerPage() {
     'fallacy',
   ])
   const [selectedSegment, setSelectedSegment] = useState<{ startIndex: number; endIndex: number } | null>(null)
+  const [textViewMode, setTextViewMode] = useState<'annotated' | 'original'>('annotated')
   const textPanelRef = useRef<HTMLDivElement | null>(null)
 
   const displayText = (result?.translatedText ?? result?.originalText) ?? ''
@@ -173,77 +174,97 @@ export function AssumptionAnalyzerPage() {
           <div className="results-main">
             <h2>Annotated text</h2>
             {originalTextLanguage && (
-              <p className="muted translation-indicator" style={{ marginBottom: '0.5rem' }}>
-                Analyzed from English translation of {originalTextLanguage}.
-                {nativeIntentStronger && (
-                  <span className="native-intent-badge" style={{ marginLeft: '0.5rem' }}>
-                    Original tone stronger than translation
-                  </span>
-                )}
-              </p>
-            )}
-            <div className="legend">
-              <button
-                type="button"
-                className={activeFamilies.includes('assumption') ? 'legend-item active' : 'legend-item'}
-                onClick={() => toggleFamily('assumption')}
-              >
-                <span className="legend-swatch legend-assumption" />
-                Assumptions
-              </button>
-              <button
-                type="button"
-                className={activeFamilies.includes('agenda') ? 'legend-item active' : 'legend-item'}
-                onClick={() => toggleFamily('agenda')}
-              >
-                <span className="legend-swatch legend-agenda" />
-                Hidden agendas
-              </button>
-              <button
-                type="button"
-                className={activeFamilies.includes('fallacy') ? 'legend-item active' : 'legend-item'}
-                onClick={() => toggleFamily('fallacy')}
-              >
-                <span className="legend-swatch legend-fallacy" />
-                Logical fallacies
-              </button>
-            </div>
-            {activeFamilies.includes('fallacy') && distinctFallacyTypes.length > 0 && (
-              <div className="legend legend-fallacy-types">
-                <span className="legend-label">By type (opacity = confidence):</span>
-                {distinctFallacyTypes.map((key) => {
-                  const base = fallacyTypeColors[key] ?? 'rgba(255, 160, 122, 1)'
-                  const swatchColor = base.replace('OPACITY', '1')
-                  const label = key.replace(/_/g, ' ')
-                  return (
-                    <span key={key} className="legend-fallacy-type" title={label}>
-                      <span
-                        className="legend-swatch"
-                        style={{ backgroundColor: swatchColor }}
-                      />
-                      {label}
+              <>
+                <p className="muted translation-indicator" style={{ marginBottom: '0.5rem' }}>
+                  Analyzed from English translation of {originalTextLanguage}.
+                  {nativeIntentStronger && (
+                    <span className="native-intent-badge" style={{ marginLeft: '0.5rem' }}>
+                      Original tone stronger than translation
                     </span>
-                  )
-                })}
-              </div>
+                  )}
+                </p>
+                <div className="text-view-toggle" style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    className={textViewMode === 'annotated' ? 'tab active' : 'tab'}
+                    onClick={() => setTextViewMode('annotated')}
+                  >
+                    Annotated (English)
+                  </button>
+                  <button
+                    type="button"
+                    className={textViewMode === 'original' ? 'tab active' : 'tab'}
+                    onClick={() => setTextViewMode('original')}
+                  >
+                    Original ({originalTextLanguage})
+                  </button>
+                </div>
+              </>
+            )}
+            {(!originalTextLanguage || textViewMode === 'annotated') && (
+              <>
+                <div className="legend">
+                  <button
+                    type="button"
+                    className={activeFamilies.includes('assumption') ? 'legend-item active' : 'legend-item'}
+                    onClick={() => toggleFamily('assumption')}
+                  >
+                    <span className="legend-swatch legend-assumption" />
+                    Assumptions
+                  </button>
+                  <button
+                    type="button"
+                    className={activeFamilies.includes('agenda') ? 'legend-item active' : 'legend-item'}
+                    onClick={() => toggleFamily('agenda')}
+                  >
+                    <span className="legend-swatch legend-agenda" />
+                    Hidden agendas
+                  </button>
+                  <button
+                    type="button"
+                    className={activeFamilies.includes('fallacy') ? 'legend-item active' : 'legend-item'}
+                    onClick={() => toggleFamily('fallacy')}
+                  >
+                    <span className="legend-swatch legend-fallacy" />
+                    Logical fallacies
+                  </button>
+                </div>
+                {activeFamilies.includes('fallacy') && distinctFallacyTypes.length > 0 && (
+                  <div className="legend legend-fallacy-types">
+                    <span className="legend-label">By type (opacity = confidence):</span>
+                    {distinctFallacyTypes.map((key) => {
+                      const base = fallacyTypeColors[key] ?? 'rgba(255, 160, 122, 1)'
+                      const swatchColor = base.replace('OPACITY', '1')
+                      const label = key.replace(/_/g, ' ')
+                      return (
+                        <span key={key} className="legend-fallacy-type" title={label}>
+                          <span
+                            className="legend-swatch"
+                            style={{ backgroundColor: swatchColor }}
+                          />
+                          {label}
+                        </span>
+                      )
+                    })}
+                  </div>
+                )}
+              </>
             )}
 
             <div className="text-panel" ref={textPanelRef}>
-              <ColoredTextView
-                text={displayText}
-                segments={segmentsForView}
-                activeFamilies={activeFamilies}
-                selectedSegment={selectedSegment}
-              />
-            </div>
-            {translatedText && originalText && (
-              <details className="original-text-details" style={{ marginTop: '1rem' }}>
-                <summary>Original ({originalTextLanguage ?? 'source'})</summary>
-                <p className="original-text-block" style={{ whiteSpace: 'pre-wrap', marginTop: '0.5rem' }}>
+              {originalTextLanguage && textViewMode === 'original' ? (
+                <p className="colored-text-view" style={{ whiteSpace: 'pre-wrap' }}>
                   {originalText}
                 </p>
-              </details>
-            )}
+              ) : (
+                <ColoredTextView
+                  text={displayText}
+                  segments={segmentsForView}
+                  activeFamilies={activeFamilies}
+                  selectedSegment={selectedSegment}
+                />
+              )}
+            </div>
           </div>
 
           <aside className="results-side">

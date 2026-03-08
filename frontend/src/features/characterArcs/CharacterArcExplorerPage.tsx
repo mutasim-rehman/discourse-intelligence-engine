@@ -87,6 +87,7 @@ export function CharacterArcExplorerPage() {
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<CharacterArcsResponse | null>(null)
   const [activeCharacterId, setActiveCharacterId] = useState<string | null>(null)
+  const [textViewMode, setTextViewMode] = useState<'annotated' | 'original'>('annotated')
 
   const displayText = (result?.translatedText ?? result?.originalText) ?? ''
   const originalText = result?.originalText ?? ''
@@ -272,31 +273,47 @@ export function CharacterArcExplorerPage() {
           <div className="results-main">
             <h2>Annotated text</h2>
             {originalTextLanguage && (
-              <p className="muted translation-indicator" style={{ marginBottom: '0.5rem' }}>
-                Analyzed from English translation of {originalTextLanguage}.
-                {nativeIntentStronger && (
-                  <span className="native-intent-badge" style={{ marginLeft: '0.5rem' }}>
-                    Original tone stronger than translation
-                  </span>
-                )}
-              </p>
+              <>
+                <p className="muted translation-indicator" style={{ marginBottom: '0.5rem' }}>
+                  Analyzed from English translation of {originalTextLanguage}.
+                  {nativeIntentStronger && (
+                    <span className="native-intent-badge" style={{ marginLeft: '0.5rem' }}>
+                      Original tone stronger than translation
+                    </span>
+                  )}
+                </p>
+                <div className="text-view-toggle" style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    className={textViewMode === 'annotated' ? 'tab active' : 'tab'}
+                    onClick={() => setTextViewMode('annotated')}
+                  >
+                    Annotated (English)
+                  </button>
+                  <button
+                    type="button"
+                    className={textViewMode === 'original' ? 'tab active' : 'tab'}
+                    onClick={() => setTextViewMode('original')}
+                  >
+                    Original ({originalTextLanguage})
+                  </button>
+                </div>
+              </>
             )}
             <div className="text-panel">
-              <ColoredTextView
-                text={displayText}
-                segments={arcSegments}
-                activeFamilies={['arc']}
-                activeCharacterId={activeCharacterId}
-              />
-            </div>
-            {translatedText && originalText && (
-              <details className="original-text-details" style={{ marginTop: '1rem' }}>
-                <summary>Original ({originalTextLanguage ?? 'source'})</summary>
-                <p className="original-text-block" style={{ whiteSpace: 'pre-wrap', marginTop: '0.5rem' }}>
+              {originalTextLanguage && textViewMode === 'original' ? (
+                <p className="colored-text-view" style={{ whiteSpace: 'pre-wrap' }}>
                   {originalText}
                 </p>
-              </details>
-            )}
+              ) : (
+                <ColoredTextView
+                  text={displayText}
+                  segments={arcSegments}
+                  activeFamilies={['arc']}
+                  activeCharacterId={activeCharacterId}
+                />
+              )}
+            </div>
 
             {activeArc && (
               <div className="arc-detail">

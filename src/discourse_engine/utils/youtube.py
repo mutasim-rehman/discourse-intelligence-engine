@@ -258,6 +258,19 @@ def fetch_transcript_with_translation(
     raw_translated = " ".join(s.text for s in translated_snippets).replace("\n", " ").strip()
     original_text = preprocess_transcript(raw_original)
     translated_text = preprocess_transcript(raw_translated)
+
+    # YouTube translate can fail or return original; fall back to googletrans
+    if original_lang.lower() not in ("en", "en-us", "en-gb") and (
+        not translated_text or translated_text == original_text
+    ):
+        try:
+            from discourse_engine.utils.translation import translate_to_english
+            fallback = translate_to_english(original_text, source_lang=original_lang)
+            if fallback and fallback != original_text:
+                translated_text = fallback
+                # timestamped_segments stay with original; main text uses our translation
+        except Exception:
+            pass
     context_note = detect_comedic_context(raw_translated)
 
     # Build timestamped segments for Vocal Stress Sync
