@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Iterable, Tuple
 
 from discourse_engine import format_report, run_pipeline
+from discourse_engine.utils.translation import prepare_text_for_analysis
 from discourse_engine.models.config import Config
 from discourse_engine.models.report import AgendaFlag, Report
 from discourse_engine.v5.models import DiscourseMap
@@ -39,6 +40,18 @@ def fetch_youtube_transcript(url_or_id: str) -> tuple[str, str | None]:
     from discourse_engine.utils.youtube import fetch_transcript
 
     return fetch_transcript(url_or_id)
+
+
+def fetch_youtube_transcript_v7(
+    url_or_id: str,
+) -> tuple[str, str | None, str, str | None]:
+    """V7: Fetch transcript with translation when non-English. Returns (text_for_analysis, original_text, lang, context_note)."""
+    from discourse_engine.utils.youtube import fetch_transcript_with_translation
+
+    orig, trans, lang, ctx, _ = fetch_transcript_with_translation(url_or_id)
+    if lang.lower() in ("en", "en-us", "en-gb"):
+        return trans, None, lang, ctx
+    return trans, orig, lang, ctx
 
 
 def read_text_interactive() -> str:
@@ -227,9 +240,14 @@ def run_analyze_from_args(args: argparse.Namespace) -> int:
     # YouTube input takes precedence over target/batch.
     if args.youtube:
         try:
-            print("Fetching transcript...", file=sys.stderr)
-            text, context_note = fetch_youtube_transcript(args.youtube)
-            print(f"Transcript length: {len(text)} chars\n", file=sys.stderr)
+            print("Fetching transcript (V7: with translation if non-English)...", file=sys.stderr)
+            text, original_text, lang, context_note = fetch_youtube_transcript_v7(
+                args.youtube
+            )
+            print(f"Transcript length: {len(text)} chars", file=sys.stderr)
+            if original_text is not None:
+                print(f"Original language: {lang} (translated to English for analysis)", file=sys.stderr)
+            print(file=sys.stderr)
         except ValueError as e:
             print(str(e), file=sys.stderr)
             return 1
@@ -358,9 +376,15 @@ def run_analyze_from_args(args: argparse.Namespace) -> int:
         path = Path(target)
         if path.exists() and path.is_file():
             try:
-                text = path.read_text(encoding="utf-8")
+                raw = path.read_text(encoding="utf-8")
             except UnicodeDecodeError:
-                text = path.read_text(encoding="utf-8", errors="ignore")
+                raw = path.read_text(encoding="utf-8", errors="ignore")
+            text, _orig, _lang = prepare_text_for_analysis(raw)
+            if _orig is not None:
+                print(
+                    f"V7: Detected {_lang} (translated to English for analysis)",
+                    file=sys.stderr,
+                )
             document_id = str(path)
         elif path.exists() and path.is_dir():
             print(
@@ -369,12 +393,28 @@ def run_analyze_from_args(args: argparse.Namespace) -> int:
             )
             return 1
         else:
-            # Treat as raw text string.
-            text = target
+            text, _orig, _lang = prepare_text_for_analysis(target)
+            if _orig is not None:
+                print(
+                    f"V7: Detected {_lang} (translated to English for analysis)",
+                    file=sys.stderr,
+                )
     elif stdin_has_data:
-        text = read_text_piped()
+        raw = read_text_piped()
+        text, _orig, _lang = prepare_text_for_analysis(raw)
+        if _orig is not None:
+            print(
+                f"V7: Detected {_lang} (translated to English for analysis)",
+                file=sys.stderr,
+            )
     else:
-        text = read_text_interactive()
+        raw = read_text_interactive()
+        text, _orig, _lang = prepare_text_for_analysis(raw)
+        if _orig is not None:
+            print(
+                f"V7: Detected {_lang} (translated to English for analysis)",
+                file=sys.stderr,
+            )
 
     if not text.strip():
         print("No text provided.", file=sys.stderr)

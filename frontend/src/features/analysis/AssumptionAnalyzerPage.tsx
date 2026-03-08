@@ -19,7 +19,11 @@ export function AssumptionAnalyzerPage() {
   const [selectedSegment, setSelectedSegment] = useState<{ startIndex: number; endIndex: number } | null>(null)
   const textPanelRef = useRef<HTMLDivElement | null>(null)
 
+  const displayText = (result?.translatedText ?? result?.originalText) ?? ''
   const originalText = result?.originalText ?? ''
+  const translatedText = result?.translatedText
+  const originalTextLanguage = result?.originalTextLanguage
+  const nativeIntentStronger = result?.nativeIntentStronger ?? false
 
   const segmentsForView = useMemo(() => (result?.segments ?? []).map((s) => ({ ...s })), [result])
 
@@ -168,6 +172,16 @@ export function AssumptionAnalyzerPage() {
           )}
           <div className="results-main">
             <h2>Annotated text</h2>
+            {originalTextLanguage && (
+              <p className="muted translation-indicator" style={{ marginBottom: '0.5rem' }}>
+                Analyzed from English translation of {originalTextLanguage}.
+                {nativeIntentStronger && (
+                  <span className="native-intent-badge" style={{ marginLeft: '0.5rem' }}>
+                    Original tone stronger than translation
+                  </span>
+                )}
+              </p>
+            )}
             <div className="legend">
               <button
                 type="button"
@@ -216,12 +230,20 @@ export function AssumptionAnalyzerPage() {
 
             <div className="text-panel" ref={textPanelRef}>
               <ColoredTextView
-                text={originalText}
+                text={displayText}
                 segments={segmentsForView}
                 activeFamilies={activeFamilies}
                 selectedSegment={selectedSegment}
               />
             </div>
+            {translatedText && originalText && (
+              <details className="original-text-details" style={{ marginTop: '1rem' }}>
+                <summary>Original ({originalTextLanguage ?? 'source'})</summary>
+                <p className="original-text-block" style={{ whiteSpace: 'pre-wrap', marginTop: '0.5rem' }}>
+                  {originalText}
+                </p>
+              </details>
+            )}
           </div>
 
           <aside className="results-side">

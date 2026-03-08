@@ -66,6 +66,9 @@ export interface CharacterArcsResponse {
   documentArcsJson: DocumentArcsJson | unknown
   mermaidMmd: string | null
   originalText: string
+  translatedText?: string | null
+  originalTextLanguage?: string | null
+  nativeIntentStronger?: boolean | null
   youtubeVideo?: YouTubeVideoMetadata | null
 }
 
@@ -97,6 +100,9 @@ export interface DiscourseAnalysisResponse {
   colorLegend: ColorLegendEntry[]
   mermaidMmd: string | null
   originalText: string
+  translatedText?: string | null
+  originalTextLanguage?: string | null
+  nativeIntentStronger?: boolean | null
   youtubeVideo?: YouTubeVideoMetadata | null
 }
 

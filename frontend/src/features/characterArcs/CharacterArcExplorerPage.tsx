@@ -88,7 +88,11 @@ export function CharacterArcExplorerPage() {
   const [result, setResult] = useState<CharacterArcsResponse | null>(null)
   const [activeCharacterId, setActiveCharacterId] = useState<string | null>(null)
 
+  const displayText = (result?.translatedText ?? result?.originalText) ?? ''
   const originalText = result?.originalText ?? ''
+  const translatedText = result?.translatedText
+  const originalTextLanguage = result?.originalTextLanguage
+  const nativeIntentStronger = result?.nativeIntentStronger ?? false
   const documentArcs = result?.documentArcsJson
 
   const characters: CharacterSummary[] = useMemo(
@@ -97,12 +101,12 @@ export function CharacterArcExplorerPage() {
   )
 
   const arcSegments = useMemo(() => {
-    const raw = arcSegmentsFromDocumentArcs(documentArcs, originalText.length)
+    const raw = arcSegmentsFromDocumentArcs(documentArcs, displayText.length)
     return raw.map((s) => ({
       ...s,
-      text: originalText.slice(s.startIndex, s.endIndex),
+      text: displayText.slice(s.startIndex, s.endIndex),
     }))
-  }, [documentArcs, originalText])
+  }, [documentArcs, displayText])
 
   const activeArc: DocumentCharacterArc | null = useMemo(() => {
     if (!activeCharacterId || !documentArcs?.characters) return null
@@ -267,14 +271,32 @@ export function CharacterArcExplorerPage() {
 
           <div className="results-main">
             <h2>Annotated text</h2>
+            {originalTextLanguage && (
+              <p className="muted translation-indicator" style={{ marginBottom: '0.5rem' }}>
+                Analyzed from English translation of {originalTextLanguage}.
+                {nativeIntentStronger && (
+                  <span className="native-intent-badge" style={{ marginLeft: '0.5rem' }}>
+                    Original tone stronger than translation
+                  </span>
+                )}
+              </p>
+            )}
             <div className="text-panel">
               <ColoredTextView
-                text={originalText}
+                text={displayText}
                 segments={arcSegments}
                 activeFamilies={['arc']}
                 activeCharacterId={activeCharacterId}
               />
             </div>
+            {translatedText && originalText && (
+              <details className="original-text-details" style={{ marginTop: '1rem' }}>
+                <summary>Original ({originalTextLanguage ?? 'source'})</summary>
+                <p className="original-text-block" style={{ whiteSpace: 'pre-wrap', marginTop: '0.5rem' }}>
+                  {originalText}
+                </p>
+              </details>
+            )}
 
             {activeArc && (
               <div className="arc-detail">

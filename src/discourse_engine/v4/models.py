@@ -27,6 +27,9 @@ class DialogueTurn:
     role: str | None = None
     start_time: float | None = None  # seconds from start, if available
     end_time: float | None = None
+    # V7 dual-text: when translation is used, original_text = source lang, translated_text = English
+    original_text: str | None = None
+    translated_text: str | None = None
     # Optional acoustic features from audio analysis (pitch, volume, speaking rate, etc.)
     acoustic_features: dict[str, float] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)

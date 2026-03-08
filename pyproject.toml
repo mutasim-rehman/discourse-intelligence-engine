@@ -31,6 +31,10 @@ llm = [
 nlp = [
     "nltk>=3.8",
 ]
+translate = [
+    "langdetect>=1.0",
+    "googletrans>=4.0.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

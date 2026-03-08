@@ -179,3 +179,98 @@ def fetch_transcript_only(url_or_id: str, languages: list[str] | None = None) ->
     """Fetch transcript and return only the cleaned text (no context note)."""
     text, _ = fetch_transcript(url_or_id, languages)
     return text
+
+
+def fetch_transcript_with_translation(
+    url_or_id: str,
+) -> tuple[str, str, str, str | None, list[dict]]:
+    """Fetch transcript with V7 translation: English for analysis, original for Native Layer.
+
+    Uses YouTubeTranscriptApi().list() to access translation_languages. If English
+    transcript exists, uses it directly. Otherwise fetches first available transcript
+    and translates to English via transcript.translate('en').fetch().
+
+    Returns:
+        (original_text, translated_text, original_lang, context_note, timestamped_segments)
+        - original_text: cleaned text in source language (for Native Layer)
+        - translated_text: cleaned text in English (for V1-V6 pipeline)
+        - original_lang: e.g. 'en', 'ja', 'es'
+        - context_note: e.g. comedic context warning, or None
+        - timestamped_segments: list of {start, end, originalText, translatedText}
+          for snippet-level alignment (Vocal Stress Sync)
+
+    Raises:
+        ValueError: If video ID cannot be extracted or transcript is unavailable.
+    """
+    from youtube_transcript_api import (
+        YouTubeTranscriptApi,
+        TranscriptsDisabled,
+        NoTranscriptFound,
+        VideoUnavailable,
+    )
+
+    video_id = extract_video_id(url_or_id)
+    if not video_id:
+        raise ValueError(
+            f"Could not extract YouTube video ID from: {url_or_id!r}. "
+            "Provide a URL like https://www.youtube.com/watch?v=VIDEO_ID or an 11-character video ID."
+        )
+
+    try:
+        transcript_list = YouTubeTranscriptApi().list(video_id)
+    except TranscriptsDisabled:
+        raise ValueError(f"Transcripts are disabled for video: {video_id}")
+    except VideoUnavailable:
+        raise ValueError(f"Video unavailable or does not exist: {video_id}")
+
+    original_snippets = None
+    translated_snippets = None
+    original_lang = "en"
+
+    # 1. Try English transcript first
+    try:
+        transcript = transcript_list.find_transcript(["en"])
+        fetched = transcript.fetch()
+        original_snippets = list(fetched)
+        translated_snippets = original_snippets
+        original_lang = "en"
+    except NoTranscriptFound:
+        pass
+
+    # 2. Fall back: first available transcript + translate to English
+    if original_snippets is None:
+        transcript = next(iter(transcript_list), None)
+        if transcript is None:
+            raise ValueError(
+                f"No transcript found for video {video_id}. "
+                "The video may not have captions."
+            )
+        original_lang = transcript.language_code
+        original_snippets = list(transcript.fetch())
+        try:
+            translated_transcript = transcript.translate("en")
+            translated_snippets = list(translated_transcript.fetch())
+        except Exception:
+            translated_snippets = original_snippets
+
+    # Build text strings
+    raw_original = " ".join(s.text for s in original_snippets).replace("\n", " ").strip()
+    raw_translated = " ".join(s.text for s in translated_snippets).replace("\n", " ").strip()
+    original_text = preprocess_transcript(raw_original)
+    translated_text = preprocess_transcript(raw_translated)
+    context_note = detect_comedic_context(raw_translated)
+
+    # Build timestamped segments for Vocal Stress Sync
+    timestamped_segments: list[dict] = []
+    for orig, trans in zip(original_snippets, translated_snippets):
+        start = getattr(orig, "start", 0.0)
+        duration = getattr(orig, "duration", 0.0)
+        end = start + duration
+        timestamped_segments.append({
+            "start": start,
+            "end": end,
+            "originalText": getattr(orig, "text", ""),
+            "translatedText": getattr(trans, "text", ""),
+        })
+
+    return original_text, translated_text, original_lang, context_note, timestamped_segments

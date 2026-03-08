@@ -9,7 +9,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from discourse_engine import Report
 from discourse_engine.models.report import AssumptionFlag, AgendaFlag, FallacyFlag
-from discourse_engine.utils.youtube import fetch_transcript_only, get_video_metadata
+from discourse_engine.utils.youtube import (
+    fetch_transcript_only,
+    fetch_transcript_with_translation,
+    get_video_metadata,
+)
+from discourse_engine.utils.translation import prepare_text_for_analysis
+from discourse_engine.v7.native_signals import native_intent_stronger
 from discourse_engine.v5.mermaid import discourse_map_to_mermaid
 from discourse_engine.v5.visualization import social_graph_view
 from discourse_engine.v6.arcs import arcs_to_view_payload
@@ -43,21 +49,51 @@ app.add_middleware(
 
 
 def _resolve_text(req: AnalyzeRequest) -> str:
-    """Resolve input text based on the requested source type."""
+    """Resolve input text based on the requested source type (legacy, no V7 translation)."""
+    text_for_analysis, _, _ = _resolve_text_v7(req)
+    return text_for_analysis
+
+
+def _resolve_text_v7(
+    req: AnalyzeRequest,
+) -> tuple[str, str | None, str | None]:
+    """V7: Resolve text with translation for non-English sources.
+
+    Returns:
+        (text_for_analysis, original_text, detected_lang)
+        - text_for_analysis: English text for V1-V6 pipeline (translated or original)
+        - original_text: Original text when translation was used, else None
+        - detected_lang: e.g. 'en', 'es', 'ja'
+    """
+    raw_text: str | None = None
+
     if req.sourceType is SourceType.RAW_TEXT:
         if not (req.rawText and req.rawText.strip()):
-            raise HTTPException(status_code=400, detail="rawText is required for raw_text sourceType.")
-        return req.rawText
+            raise HTTPException(
+                status_code=400, detail="rawText is required for raw_text sourceType."
+            )
+        raw_text = req.rawText
 
-    if req.sourceType is SourceType.YOUTUBE:
+    elif req.sourceType is SourceType.YOUTUBE:
         if not (req.youtubeUrl and req.youtubeUrl.strip()):
-            raise HTTPException(status_code=400, detail="youtubeUrl is required for youtube sourceType.")
+            raise HTTPException(
+                status_code=400, detail="youtubeUrl is required for youtube sourceType."
+            )
         try:
-            return fetch_transcript_only(req.youtubeUrl)
+            (
+                original_text,
+                translated_text,
+                original_lang,
+                _context_note,
+                _timestamped,
+            ) = fetch_transcript_with_translation(req.youtubeUrl)
+            if original_lang.lower() in ("en", "en-us", "en-gb"):
+                return original_text, None, original_lang
+            return translated_text, original_text, original_lang
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if req.sourceType is SourceType.FILE:
+    elif req.sourceType is SourceType.FILE:
         if not (req.filePath and req.filePath.strip()):
             raise HTTPException(
                 status_code=400,
@@ -70,11 +106,21 @@ def _resolve_text(req: AnalyzeRequest) -> str:
         if not path.exists() or not path.is_file():
             raise HTTPException(status_code=400, detail=f"File not found: {req.filePath}")
         try:
-            return path.read_text(encoding="utf-8")
+            raw_text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
-            return path.read_text(encoding="utf-8", errors="ignore")
+            raw_text = path.read_text(encoding="utf-8", errors="ignore")
+    else:
+        raise HTTPException(
+            status_code=400, detail=f"Unsupported sourceType: {req.sourceType}"
+        )
 
-    raise HTTPException(status_code=400, detail=f"Unsupported sourceType: {req.sourceType}")
+    # Raw text or file: detect and translate if needed
+    text_for_analysis, original_text, detected_lang = prepare_text_for_analysis(
+        raw_text or ""
+    )
+    if original_text is not None:
+        return text_for_analysis, original_text, detected_lang
+    return text_for_analysis, None, detected_lang
 
 
 def _build_mermaid_for_map(dm) -> str | None:
@@ -200,13 +246,12 @@ def _run_all_engines(text: str, document_id: str = "api:doc") -> tuple[Report, o
 @app.post("/api/analysis/discourse", response_model=DiscourseAnalysisResponse)
 def analyze_discourse(req: AnalyzeRequest) -> DiscourseAnalysisResponse:
     """Analyze a text for hidden assumptions, agendas, and logical fallacies."""
-    text = _resolve_text(req)
-    if not text.strip():
+    text_for_analysis, original_text, detected_lang = _resolve_text_v7(req)
+    if not text_for_analysis.strip():
         raise HTTPException(status_code=400, detail="Input text is empty after preprocessing.")
 
-    # Run the unified v6 single-document path with v3+v4+v5+v6 and LLM enhancement.
-    report, discourse_map = _run_all_engines(text)
-    segments = _segments_from_report(text, report)
+    report, discourse_map = _run_all_engines(text_for_analysis)
+    segments = _segments_from_report(text_for_analysis, report)
 
     color_legend: List[ColorLegendEntry] = [
         ColorLegendEntry(family=AnalysisFamily.ASSUMPTION, subfamily="assumption", color="#facc15"),
@@ -229,11 +274,23 @@ def analyze_discourse(req: AnalyzeRequest) -> DiscourseAnalysisResponse:
         except Exception:
             pass
 
+    native_intent = False
+    if original_text is not None and detected_lang:
+        try:
+            native_intent = native_intent_stronger(
+                original_text, text_for_analysis, detected_lang
+            )
+        except Exception:
+            pass
+
     return DiscourseAnalysisResponse(
         segments=segments,
         colorLegend=color_legend,
         mermaidMmd=mermaid,
-        originalText=text,
+        originalText=original_text if original_text is not None else text_for_analysis,
+        translatedText=text_for_analysis if original_text is not None else None,
+        originalTextLanguage=detected_lang if detected_lang and detected_lang.lower() != "en" else None,
+        nativeIntentStronger=native_intent if original_text is not None else None,
         youtubeVideo=youtube_video,
     )
 
@@ -241,20 +298,18 @@ def analyze_discourse(req: AnalyzeRequest) -> DiscourseAnalysisResponse:
 @app.post("/api/character-arcs/analyze", response_model=CharacterArcsResponse)
 def analyze_character_arcs(req: AnalyzeRequest) -> CharacterArcsResponse:
     """Analyze a text for character arcs and return a compact view for the frontend."""
-    text = _resolve_text(req)
-    if not text.strip():
+    text_for_analysis, original_text, detected_lang = _resolve_text_v7(req)
+    if not text_for_analysis.strip():
         raise HTTPException(status_code=400, detail="Input text is empty after preprocessing.")
 
-    # Reuse the unified v6 path to obtain a V5 discourse map.
-    _, dm = _run_all_engines(text)
+    _, dm = _run_all_engines(text_for_analysis)
     if dm is None:
         raise HTTPException(status_code=500, detail="Failed to build discourse map for character arcs.")
 
-    # Run v4 dialogue parsing so we get turn-based points and events (novels, transcripts, etc.).
     dialogue_report = None
     try:
         from discourse_engine.v4.dialogue_pipeline import run_dialogue_from_text
-        dialogue_report = run_dialogue_from_text(text)
+        dialogue_report = run_dialogue_from_text(text_for_analysis)
     except Exception:
         pass
 
@@ -276,13 +331,12 @@ def analyze_character_arcs(req: AnalyzeRequest) -> CharacterArcsResponse:
         points = arc_dict.get("points") or []
         events = arc_dict.get("events") or []
 
-        # Approximate character arc highlight segments from timeline points.
         for idx, pt in enumerate(points):
             position = float(pt.get("position", 0.0))
-            char_index = int(position * max(len(text) - 1, 1))
-            window = max(50, min(200, len(text) // 5 or 50))
+            char_index = int(position * max(len(text_for_analysis) - 1, 1))
+            window = max(50, min(200, len(text_for_analysis) // 5 or 50))
             start = max(0, char_index - window // 2)
-            end = min(len(text), start + window)
+            end = min(len(text_for_analysis), start + window)
             label = str(pt.get("metrics", {}).get("tactic_label", "arc"))
             confidence = float(pt.get("metrics", {}).get("authority_score", 0.7))
 
@@ -315,12 +369,24 @@ def analyze_character_arcs(req: AnalyzeRequest) -> CharacterArcsResponse:
         except Exception:
             pass
 
+    native_intent = False
+    if original_text is not None and detected_lang:
+        try:
+            native_intent = native_intent_stronger(
+                original_text, text_for_analysis, detected_lang
+            )
+        except Exception:
+            pass
+
     return CharacterArcsResponse(
         characters=characters,
         arcs=arc_segments,
         documentArcsJson=arcs_payload,
         mermaidMmd=mermaid,
-        originalText=text,
+        originalText=original_text if original_text is not None else text_for_analysis,
+        translatedText=text_for_analysis if original_text is not None else None,
+        originalTextLanguage=detected_lang if detected_lang and detected_lang.lower() != "en" else None,
+        nativeIntentStronger=native_intent if original_text is not None else None,
         youtubeVideo=youtube_video,
     )
 

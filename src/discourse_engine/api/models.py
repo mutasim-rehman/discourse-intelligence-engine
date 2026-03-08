@@ -81,6 +81,9 @@ class DiscourseAnalysisResponse(BaseModel):
     colorLegend: List[ColorLegendEntry]
     mermaidMmd: Optional[str]
     originalText: str
+    translatedText: Optional[str] = None
+    originalTextLanguage: Optional[str] = None
+    nativeIntentStronger: Optional[bool] = None
     youtubeVideo: Optional[YouTubeVideoMetadata] = None
 
 
@@ -90,4 +93,15 @@ class CharacterArcsResponse(BaseModel):
     documentArcsJson: dict
     mermaidMmd: Optional[str]
     originalText: str
+    translatedText: Optional[str] = None
+    originalTextLanguage: Optional[str] = None
+    nativeIntentStronger: Optional[bool] = None
     youtubeVideo: Optional[YouTubeVideoMetadata] = None
+
+
+class TimestampedSegment(BaseModel):
+    """Snippet-level alignment for YouTube transcripts (V7 Vocal Stress Sync)."""
+    start: float
+    end: float
+    originalText: str
+    translatedText: str
