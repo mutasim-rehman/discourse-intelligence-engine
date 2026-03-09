@@ -8,23 +8,19 @@ function LogoMark() {
     <span className="logo-mark" aria-hidden="true">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
         <path
-          d="M20 12c0 4.418-3.582 8-8 8a7.97 7.97 0 0 1-5.125-1.852L4 19l.852-2.875A7.97 7.97 0 0 1 4 12c0-4.418 3.582-8 8-8s8 3.582 8 8Z"
+          d="M20 12c0 4.4-3.6 8-8 8a8 8 0 0 1-5.2-1.9L4 19l1-2.9A8 8 0 0 1 4 12c0-4.4 3.6-8 8-8s8 3.6 8 8Z"
           stroke="currentColor"
-          strokeWidth="1.8"
+          strokeWidth="1.6"
           strokeLinejoin="round"
         />
         <path
-          d="M8.2 12.3c.65-1.35 1.9-2.2 3.7-2.2 1.95 0 3.2 1.05 3.2 2.55 0 1.1-.62 1.82-1.7 2.35-.82.41-1.22.74-1.22 1.4v.4"
+          d="M12 7.2c.9 0 1.6.4 2 .9.5.6.4 1.4-.1 2l-1.2 1v1.2"
           stroke="currentColor"
-          strokeWidth="1.8"
+          strokeWidth="1.6"
           strokeLinecap="round"
+          strokeLinejoin="round"
         />
-        <path
-          d="M12 17.9h.01"
-          stroke="currentColor"
-          strokeWidth="2.6"
-          strokeLinecap="round"
-        />
+        <circle cx="12" cy="15.2" r="0.9" fill="currentColor" />
       </svg>
     </span>
   )
