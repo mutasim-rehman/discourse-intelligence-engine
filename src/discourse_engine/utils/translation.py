@@ -222,11 +222,12 @@ def translate_to_english(text: str, source_lang: str | None = None) -> str:
     try:
         return asyncio.run(_translate())
     except ImportError:
-        pass
+        # Testing helper: signal that googletrans is not installed/available
+        return "[GOOGLETRANS_UNAVAILABLE]"
     except Exception:
-        pass
-
-    return text
+        # Testing helper: signal a generic translation error instead of silently
+        # falling back to the original text.
+        return "[GOOGLETRANS_ERROR]"
 
 
 def prepare_text_for_analysis(text: str) -> tuple[str, str | None, str]:

@@ -57,7 +57,7 @@ export function getMilestoneLabel(
   event: DocumentArcEvent,
   characterName: string,
 ): string {
-  const pct = Math.round((Number(event.position) ?? 0) * 100)
+  const pct = Math.round(Number(event.position ?? 0) * 100)
   const raw = (event.label || '').replace(/_/g, ' ')
   const human = EVENT_MILESTONE_TEXT[event.label ?? ''] ?? raw
   if (event.label === 'power_pivot') {

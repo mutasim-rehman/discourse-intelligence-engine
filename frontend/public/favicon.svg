@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="g" x1="16" y1="16" x2="112" y2="112" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ff5fa2" />
+      <stop offset="0.55" stop-color="#8b5cf6" />
+      <stop offset="1" stop-color="#2dd4bf" />
+    </linearGradient>
+    <filter id="s" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.18" />
+    </filter>
+  </defs>
+
+  <!-- chat bubble -->
+  <path
+    filter="url(#s)"
+    d="M34 26c-9.9 0-18 8.1-18 18v28c0 9.9 8.1 18 18 18h30l16 12a6 6 0 0 0 9.6-4.8V90c10 0 18-8.1 18-18V44c0-9.9-8.1-18-18-18H34Z"
+    fill="url(#g)"
+  />
+
+  <!-- cute dots -->
+  <circle cx="44" cy="58" r="7" fill="white" opacity="0.92" />
+  <circle cx="64" cy="58" r="7" fill="white" opacity="0.92" />
+  <circle cx="84" cy="58" r="7" fill="white" opacity="0.92" />
+
+  <!-- tiny sparkle -->
+  <path
+    d="M94 34l3 7 7 3-7 3-3 7-3-7-7-3 7-3 3-7Z"
+    fill="white"
+    opacity="0.92"
+  />
+</svg>
+

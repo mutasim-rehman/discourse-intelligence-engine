@@ -1,4 +1,5 @@
-import { FormEvent, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
+import type { FormEvent } from 'react'
 import {
   analyzeCharacterArcs,
   type CharacterArcsResponse,
@@ -58,7 +59,7 @@ function arcSegmentsFromDocumentArcs(
   const window = Math.max(50, Math.min(200, Math.floor(textLength / 5) || 50))
   for (const [cid, arc] of Object.entries(d.characters)) {
     const points = arc.points ?? []
-    points.forEach((pt, idx) => {
+    points.forEach((pt) => {
       const position = Number(pt.position ?? 0)
       const charIndex = Math.floor(position * len)
       const start = Math.max(0, charIndex - Math.floor(window / 2))
@@ -91,7 +92,6 @@ export function CharacterArcExplorerPage() {
 
   const displayText = (result?.translatedText ?? result?.originalText) ?? ''
   const originalText = result?.originalText ?? ''
-  const translatedText = result?.translatedText
   const originalTextLanguage = result?.originalTextLanguage
   const nativeIntentStronger = result?.nativeIntentStronger ?? false
   const documentArcs = result?.documentArcsJson
@@ -110,8 +110,8 @@ export function CharacterArcExplorerPage() {
   }, [documentArcs, displayText])
 
   const activeArc: DocumentCharacterArc | null = useMemo(() => {
-    if (!activeCharacterId || !documentArcs?.characters) return null
-    const d = documentArcs as DocumentArcsJson
+    const d = documentArcs as DocumentArcsJson | undefined
+    if (!activeCharacterId || !d?.characters) return null
     return d.characters[activeCharacterId] ?? null
   }, [activeCharacterId, documentArcs])
 
@@ -159,9 +159,8 @@ export function CharacterArcExplorerPage() {
       const response = await analyzeCharacterArcs(payload)
       setResult(response)
       setStatus('success')
-      const firstId = response.documentArcsJson?.characters
-        ? Object.keys(response.documentArcsJson.characters)[0]
-        : null
+      const d = response.documentArcsJson as DocumentArcsJson | undefined
+      const firstId = d?.characters ? Object.keys(d.characters)[0] : null
       if (firstId) setActiveCharacterId(firstId)
     } catch (err) {
       setStatus('error')
@@ -274,15 +273,15 @@ export function CharacterArcExplorerPage() {
             <h2>Annotated text</h2>
             {originalTextLanguage && (
               <>
-                <p className="muted translation-indicator" style={{ marginBottom: '0.5rem' }}>
+                <p className="muted translation-indicator">
                   Analyzed from English translation of {originalTextLanguage}.
                   {nativeIntentStronger && (
-                    <span className="native-intent-badge" style={{ marginLeft: '0.5rem' }}>
+                    <span className="native-intent-badge">
                       Original tone stronger than translation
                     </span>
                   )}
                 </p>
-                <div className="text-view-toggle" style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem' }}>
+                <div className="text-view-toggle">
                   <button
                     type="button"
                     className={textViewMode === 'annotated' ? 'tab active' : 'tab'}
@@ -343,7 +342,11 @@ export function CharacterArcExplorerPage() {
                         const width = 100
                         const height = 48
                         const padding = 4
-                        const xs = sorted.map((p) => padding + (Number(p.position) ?? 0) * (width - 2 * padding))
+                        const xs = sorted.map(
+                          (p) =>
+                            padding +
+                            Number(p.position ?? 0) * (width - 2 * padding),
+                        )
                         const auths = sorted.map(
                           (p) =>
                             Number((p.metrics as Record<string, unknown>)?.authority_score ?? 0),
@@ -382,16 +385,17 @@ export function CharacterArcExplorerPage() {
                           const auth = Number(metrics.authority_score ?? 0)
                           const tactic = String(metrics.tactic_label ?? 'Fact-based')
                           const badge = getStrategyBadge(tactic)
-                          const phase = getPhaseLabel(Number(pt.position), auth)
+                          const phase = getPhaseLabel(Number(pt.position ?? 0), auth)
                           const phrase = authorityToPhrase(auth)
                           return (
                             <li key={i} className="arc-phase-item">
                               <span className="arc-phase-pct">
-                                {Math.round(Number(pt.position) * 100)}%
+                                {Math.round(Number(pt.position ?? 0) * 100)}%
                               </span>
                               <span className="arc-phase-badge" title={tactic}>
                                 {badge}
                               </span>
+                              <span className="arc-phase-label">{phase}</span>
                               <span className="arc-phase-authority" title={`Authority: ${auth.toFixed(2)}`}>
                                 {phrase}
                               </span>

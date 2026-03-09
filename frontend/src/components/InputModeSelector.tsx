@@ -1,4 +1,5 @@
-import { ChangeEvent, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
+import type { ChangeEvent } from 'react'
 
 export type SourceType = 'raw_text' | 'file' | 'youtube'
 

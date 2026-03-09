@@ -1,6 +1,8 @@
-import { FormEvent, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
+import type { FormEvent } from 'react'
 import { analyzeDiscourse, type CommonRequestPayload, type DiscourseAnalysisResponse } from '../../api/client'
-import { ColoredTextView, fallacyTypeColors, type HighlightFamily } from '../../components/ColoredTextView'
+import { ColoredTextView, type HighlightFamily } from '../../components/ColoredTextView'
+import { fallacyTypeColors } from '../../components/fallacyTypeColors'
 import { InputModeSelector, type InputModeValue } from '../../components/InputModeSelector'
 
 type AnalysisStatus = 'idle' | 'loading' | 'error' | 'success'
@@ -20,9 +22,14 @@ export function AssumptionAnalyzerPage() {
   const [textViewMode, setTextViewMode] = useState<'annotated' | 'original'>('annotated')
   const textPanelRef = useRef<HTMLDivElement | null>(null)
 
+  const [openBuckets, setOpenBuckets] = useState({
+    assumptions: true,
+    agendas: true,
+    fallacies: true,
+  })
+
   const displayText = (result?.translatedText ?? result?.originalText) ?? ''
   const originalText = result?.originalText ?? ''
-  const translatedText = result?.translatedText
   const originalTextLanguage = result?.originalTextLanguage
   const nativeIntentStronger = result?.nativeIntentStronger ?? false
 
@@ -121,6 +128,13 @@ export function AssumptionAnalyzerPage() {
     }
   }
 
+  function toggleBucket(key: 'assumptions' | 'agendas' | 'fallacies') {
+    setOpenBuckets((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }))
+  }
+
   return (
     <div className="page-root">
       <header className="page-header">
@@ -175,15 +189,15 @@ export function AssumptionAnalyzerPage() {
             <h2>Annotated text</h2>
             {originalTextLanguage && (
               <>
-                <p className="muted translation-indicator" style={{ marginBottom: '0.5rem' }}>
+                <p className="muted translation-indicator">
                   Analyzed from English translation of {originalTextLanguage}.
                   {nativeIntentStronger && (
-                    <span className="native-intent-badge" style={{ marginLeft: '0.5rem' }}>
+                    <span className="native-intent-badge">
                       Original tone stronger than translation
                     </span>
                   )}
                 </p>
-                <div className="text-view-toggle" style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem' }}>
+                <div className="text-view-toggle">
                   <button
                     type="button"
                     className={textViewMode === 'annotated' ? 'tab active' : 'tab'}
@@ -270,102 +284,164 @@ export function AssumptionAnalyzerPage() {
           <aside className="results-side">
             <h2>Detected patterns</h2>
             <p className="muted">
-              Each item shows the pattern type, its family, and confidence. Click any to jump to the text.
+              Each box groups one family. Click a box header to expand its list, then click an item to jump in the text.
             </p>
 
             <div className="fallacy-list">
-              <strong className="muted">Assumptions</strong>
-              {assumptionSegments.length === 0 && (
-                <p className="muted">No assumptions detected.</p>
-              )}
-              {assumptionSegments.map((seg, idx) => {
-                const conf = Math.max(0, Math.min(seg.confidence ?? 0, 1))
-                const isActive =
-                  !!selectedSegment &&
-                  selectedSegment.startIndex === seg.startIndex &&
-                  selectedSegment.endIndex === seg.endIndex
+              <section className={openBuckets.assumptions ? 'pattern-bucket open' : 'pattern-bucket'}>
+                <button
+                  type="button"
+                  className="pattern-bucket-header"
+                  onClick={() => toggleBucket('assumptions')}
+                  aria-expanded={openBuckets.assumptions}
+                >
+                  <div className="pattern-bucket-header-main">
+                    <span className="pattern-bucket-title">Assumptions</span>
+                    <span className="pattern-bucket-count">
+                      {assumptionSegments.length}
+                      <span className="pattern-bucket-count-label">items</span>
+                    </span>
+                  </div>
+                  <span className="pattern-bucket-chevron" aria-hidden="true">
+                    ˅
+                  </span>
+                </button>
+                {openBuckets.assumptions && (
+                  <div className="pattern-bucket-body">
+                    {assumptionSegments.length === 0 && (
+                      <p className="muted">No assumptions detected.</p>
+                    )}
+                    {assumptionSegments.map((seg, idx) => {
+                      const conf = Math.max(0, Math.min(seg.confidence ?? 0, 1))
+                      const isActive =
+                        !!selectedSegment &&
+                        selectedSegment.startIndex === seg.startIndex &&
+                        selectedSegment.endIndex === seg.endIndex
 
-                return (
-                  <button
-                    type="button"
-                    key={`assumption-${seg.startIndex}-${seg.endIndex}-${idx}`}
-                    className={isActive ? 'fallacy-item active' : 'fallacy-item'}
-                    onClick={() => jumpToSegment({ startIndex: seg.startIndex, endIndex: seg.endIndex })}
-                  >
-                    <div className="fallacy-title-row">
-                      <div className="fallacy-title">Hidden assumption</div>
-                      <span className="pill">{Math.round(conf * 100)}%</span>
-                    </div>
-                    <div className="fallacy-snippet">
-                      {seg.text.length > 140 ? `${seg.text.slice(0, 140)}…` : seg.text}
-                    </div>
-                  </button>
-                )
-              })}
+                      return (
+                        <button
+                          type="button"
+                          key={`assumption-${seg.startIndex}-${seg.endIndex}-${idx}`}
+                          className={isActive ? 'fallacy-item active' : 'fallacy-item'}
+                          onClick={() => jumpToSegment({ startIndex: seg.startIndex, endIndex: seg.endIndex })}
+                        >
+                          <div className="fallacy-title-row">
+                            <div className="fallacy-title">Hidden assumption</div>
+                            <span className="pill">{Math.round(conf * 100)}%</span>
+                          </div>
+                          <div className="fallacy-snippet">
+                            {seg.text.length > 140 ? `${seg.text.slice(0, 140)}…` : seg.text}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </section>
 
-              <strong className="muted" style={{ marginTop: '0.75rem' }}>
-                Agendas
-              </strong>
-              {agendaSegments.length === 0 && (
-                <p className="muted">No hidden agendas detected.</p>
-              )}
-              {agendaSegments.map((seg, idx) => {
-                const label = seg.subfamily || 'Hidden agenda'
-                const conf = Math.max(0, Math.min(seg.confidence ?? 0, 1))
-                const isActive =
-                  !!selectedSegment &&
-                  selectedSegment.startIndex === seg.startIndex &&
-                  selectedSegment.endIndex === seg.endIndex
+              <section className={openBuckets.agendas ? 'pattern-bucket open' : 'pattern-bucket'}>
+                <button
+                  type="button"
+                  className="pattern-bucket-header"
+                  onClick={() => toggleBucket('agendas')}
+                  aria-expanded={openBuckets.agendas}
+                >
+                  <div className="pattern-bucket-header-main">
+                    <span className="pattern-bucket-title">Agendas</span>
+                    <span className="pattern-bucket-count">
+                      {agendaSegments.length}
+                      <span className="pattern-bucket-count-label">items</span>
+                    </span>
+                  </div>
+                  <span className="pattern-bucket-chevron" aria-hidden="true">
+                    ˅
+                  </span>
+                </button>
+                {openBuckets.agendas && (
+                  <div className="pattern-bucket-body">
+                    {agendaSegments.length === 0 && (
+                      <p className="muted">No hidden agendas detected.</p>
+                    )}
+                    {agendaSegments.map((seg, idx) => {
+                      const label = seg.subfamily || 'Hidden agenda'
+                      const conf = Math.max(0, Math.min(seg.confidence ?? 0, 1))
+                      const isActive =
+                        !!selectedSegment &&
+                        selectedSegment.startIndex === seg.startIndex &&
+                        selectedSegment.endIndex === seg.endIndex
 
-                return (
-                  <button
-                    type="button"
-                    key={`agenda-${seg.startIndex}-${seg.endIndex}-${idx}`}
-                    className={isActive ? 'fallacy-item active' : 'fallacy-item'}
-                    onClick={() => jumpToSegment({ startIndex: seg.startIndex, endIndex: seg.endIndex })}
-                  >
-                    <div className="fallacy-title-row">
-                      <div className="fallacy-title">{label}</div>
-                      <span className="pill">{Math.round(conf * 100)}%</span>
-                    </div>
-                    <div className="fallacy-snippet">
-                      {seg.text.length > 140 ? `${seg.text.slice(0, 140)}…` : seg.text}
-                    </div>
-                  </button>
-                )
-              })}
+                      return (
+                        <button
+                          type="button"
+                          key={`agenda-${seg.startIndex}-${seg.endIndex}-${idx}`}
+                          className={isActive ? 'fallacy-item active' : 'fallacy-item'}
+                          onClick={() => jumpToSegment({ startIndex: seg.startIndex, endIndex: seg.endIndex })}
+                        >
+                          <div className="fallacy-title-row">
+                            <div className="fallacy-title">{label}</div>
+                            <span className="pill">{Math.round(conf * 100)}%</span>
+                          </div>
+                          <div className="fallacy-snippet">
+                            {seg.text.length > 140 ? `${seg.text.slice(0, 140)}…` : seg.text}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </section>
 
-              <strong className="muted" style={{ marginTop: '0.75rem' }}>
-                Fallacies
-              </strong>
-              {fallacySegments.length === 0 && (
-                <p className="muted">No fallacies detected.</p>
-              )}
-              {fallacySegments.map((seg, idx) => {
-                const label = seg.subfamily || 'Fallacy'
-                const conf = Math.max(0, Math.min(seg.confidence ?? 0, 1))
-                const isActive =
-                  !!selectedSegment &&
-                  selectedSegment.startIndex === seg.startIndex &&
-                  selectedSegment.endIndex === seg.endIndex
+              <section className={openBuckets.fallacies ? 'pattern-bucket open' : 'pattern-bucket'}>
+                <button
+                  type="button"
+                  className="pattern-bucket-header"
+                  onClick={() => toggleBucket('fallacies')}
+                  aria-expanded={openBuckets.fallacies}
+                >
+                  <div className="pattern-bucket-header-main">
+                    <span className="pattern-bucket-title">Fallacies</span>
+                    <span className="pattern-bucket-count">
+                      {fallacySegments.length}
+                      <span className="pattern-bucket-count-label">items</span>
+                    </span>
+                  </div>
+                  <span className="pattern-bucket-chevron" aria-hidden="true">
+                    ˅
+                  </span>
+                </button>
+                {openBuckets.fallacies && (
+                  <div className="pattern-bucket-body">
+                    {fallacySegments.length === 0 && (
+                      <p className="muted">No fallacies detected.</p>
+                    )}
+                    {fallacySegments.map((seg, idx) => {
+                      const label = seg.subfamily || 'Fallacy'
+                      const conf = Math.max(0, Math.min(seg.confidence ?? 0, 1))
+                      const isActive =
+                        !!selectedSegment &&
+                        selectedSegment.startIndex === seg.startIndex &&
+                        selectedSegment.endIndex === seg.endIndex
 
-                return (
-                  <button
-                    type="button"
-                    key={`fallacy-${seg.startIndex}-${seg.endIndex}-${idx}`}
-                    className={isActive ? 'fallacy-item active' : 'fallacy-item'}
-                    onClick={() => jumpToSegment({ startIndex: seg.startIndex, endIndex: seg.endIndex })}
-                  >
-                    <div className="fallacy-title-row">
-                      <div className="fallacy-title">{label}</div>
-                      <span className="pill">{Math.round(conf * 100)}%</span>
-                    </div>
-                    <div className="fallacy-snippet">
-                      {seg.text.length > 140 ? `${seg.text.slice(0, 140)}…` : seg.text}
-                    </div>
-                  </button>
-                )
-              })}
+                      return (
+                        <button
+                          type="button"
+                          key={`fallacy-${seg.startIndex}-${seg.endIndex}-${idx}`}
+                          className={isActive ? 'fallacy-item active' : 'fallacy-item'}
+                          onClick={() => jumpToSegment({ startIndex: seg.startIndex, endIndex: seg.endIndex })}
+                        >
+                          <div className="fallacy-title-row">
+                            <div className="fallacy-title">{label}</div>
+                            <span className="pill">{Math.round(conf * 100)}%</span>
+                          </div>
+                          <div className="fallacy-snippet">
+                            {seg.text.length > 140 ? `${seg.text.slice(0, 140)}…` : seg.text}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </section>
             </div>
           </aside>
         </section>
