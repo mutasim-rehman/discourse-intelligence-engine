@@ -129,9 +129,12 @@ let gradioClient: Awaited<ReturnType<typeof import('@gradio/client').Client.conn
 async function getGradioClient() {
   if (gradioClient) return gradioClient
   const { Client } = await import('@gradio/client')
-  gradioClient = await Client.connect(GRADIO_SPACE!.trim(), {
-    hf_token: typeof HF_TOKEN === 'string' && HF_TOKEN.trim() ? HF_TOKEN : undefined,
-  })
+  const options: Record<string, unknown> = {}
+  if (typeof HF_TOKEN === 'string' && HF_TOKEN.trim()) {
+    // `hf_token` is supported by @gradio/client at runtime but not yet in its TS types.
+    ;(options as { hf_token?: string }).hf_token = HF_TOKEN.trim()
+  }
+  gradioClient = await Client.connect(GRADIO_SPACE!.trim(), options as any)
   return gradioClient
 }
 
