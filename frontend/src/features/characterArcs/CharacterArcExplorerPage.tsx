@@ -20,6 +20,22 @@ import { InputModeSelector, type InputModeValue } from '../../components/InputMo
 
 type AnalysisStatus = 'idle' | 'loading' | 'error' | 'success'
 
+function normalizeErrorMessage(message: string): string {
+  const msg = message || ''
+  if (msg.includes('youtubeUrl is required')) {
+    return 'Please enter a valid YouTube URL, or switch to Paste text / Upload .txt.'
+  }
+  if (
+    msg.includes('youtube') &&
+    (msg.includes('Failed to resolve') ||
+      msg.includes('NameResolutionError') ||
+      msg.includes('HTTPSConnectionPool'))
+  ) {
+    return 'The hosted backend cannot reach YouTube (DNS/network restricted). Paste the transcript or text instead.'
+  }
+  return msg || 'Failed to analyze character arcs. Please try again.'
+}
+
 /** Derive character list from document_arcs.json. */
 function charactersFromDocumentArcs(doc: DocumentArcsJson | undefined | unknown): CharacterSummary[] {
   const d = doc as DocumentArcsJson | undefined
@@ -164,11 +180,9 @@ export function CharacterArcExplorerPage() {
       if (firstId) setActiveCharacterId(firstId)
     } catch (err) {
       setStatus('error')
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Failed to analyze character arcs. Please try again.',
-      )
+      const raw =
+        err instanceof Error ? err.message : 'Failed to analyze character arcs. Please try again.'
+      setError(normalizeErrorMessage(raw))
     }
   }
 

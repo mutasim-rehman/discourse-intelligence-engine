@@ -7,6 +7,22 @@ import { InputModeSelector, type InputModeValue } from '../../components/InputMo
 
 type AnalysisStatus = 'idle' | 'loading' | 'error' | 'success'
 
+function normalizeErrorMessage(message: string): string {
+  const msg = message || ''
+  if (msg.includes('youtubeUrl is required')) {
+    return 'Please enter a valid YouTube URL, or switch to Paste text / Upload .txt.'
+  }
+  if (
+    msg.includes('youtube') &&
+    (msg.includes('Failed to resolve') ||
+      msg.includes('NameResolutionError') ||
+      msg.includes('HTTPSConnectionPool'))
+  ) {
+    return 'The hosted backend cannot reach YouTube (DNS/network restricted). Paste the transcript or text instead.'
+  }
+  return msg || 'Failed to analyze discourse. Please try again.'
+}
+
 export function AssumptionAnalyzerPage() {
   const [input, setInput] = useState<InputModeValue | null>(null)
   const [inputValid, setInputValid] = useState(false)
@@ -23,9 +39,9 @@ export function AssumptionAnalyzerPage() {
   const textPanelRef = useRef<HTMLDivElement | null>(null)
 
   const [openBuckets, setOpenBuckets] = useState({
-    assumptions: true,
-    agendas: true,
-    fallacies: true,
+    assumptions: false,
+    agendas: false,
+    fallacies: false,
   })
 
   const displayText = (result?.translatedText ?? result?.originalText) ?? ''
@@ -105,11 +121,9 @@ export function AssumptionAnalyzerPage() {
       setStatus('success')
     } catch (err) {
       setStatus('error')
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Failed to analyze discourse. Please try again.',
-      )
+      const raw =
+        err instanceof Error ? err.message : 'Failed to analyze discourse. Please try again.'
+      setError(normalizeErrorMessage(raw))
     }
   }
 
