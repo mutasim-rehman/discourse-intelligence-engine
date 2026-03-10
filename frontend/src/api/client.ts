@@ -107,9 +107,39 @@ export interface DiscourseAnalysisResponse {
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL as string | undefined
+const GRADIO_SPACE = import.meta.env.VITE_GRADIO_SPACE as string | undefined
+const HF_TOKEN = import.meta.env.VITE_HF_TOKEN as string | undefined
 
 function getBaseUrl() {
   return API_BASE_URL ?? 'http://localhost:8000'
+}
+
+function useGradio() {
+  return typeof GRADIO_SPACE === 'string' && GRADIO_SPACE.trim().length > 0
+}
+
+const DEFAULT_COLOR_LEGEND: ColorLegendEntry[] = [
+  { family: 'assumption', subfamily: 'assumption', color: '#facc15' },
+  { family: 'agenda', subfamily: undefined, color: '#38bdf8' },
+  { family: 'fallacy', subfamily: undefined, color: '#fb7185' },
+]
+
+let gradioClient: Awaited<ReturnType<typeof import('@gradio/client').Client.connect>> | null = null
+
+async function getGradioClient() {
+  if (gradioClient) return gradioClient
+  const { Client } = await import('@gradio/client')
+  gradioClient = await Client.connect(GRADIO_SPACE!.trim(), {
+    hf_token: typeof HF_TOKEN === 'string' && HF_TOKEN.trim() ? HF_TOKEN : undefined,
+  })
+  return gradioClient
+}
+
+function toGradioPayload(payload: CommonRequestPayload) {
+  const sourceType = payload.sourceType === 'youtube' ? 'YouTube' : 'Raw text'
+  const rawText = payload.rawText ?? ''
+  const youtubeUrl = payload.youtubeUrl ?? ''
+  return { source_type: sourceType, raw_text: rawText, youtube_url: youtubeUrl }
 }
 
 async function handleJsonResponse<T>(response: Response): Promise<T> {
@@ -125,6 +155,34 @@ async function handleJsonResponse<T>(response: Response): Promise<T> {
 export async function analyzeCharacterArcs(
   payload: CommonRequestPayload,
 ): Promise<CharacterArcsResponse> {
+  if (useGradio()) {
+    const client = await getGradioClient()
+    const result = await client.predict('/analyze_character_arcs', toGradioPayload(payload))
+    const data = result?.data
+    const [arcsPayload] = Array.isArray(data) ? data : []
+    const json = (arcsPayload as Record<string, unknown>) ?? {}
+    if (json.error && typeof json.error === 'string') {
+      throw new Error(json.error)
+    }
+    if (!data || !Array.isArray(data) || data.length < 2) {
+      throw new Error('Invalid response from Gradio API')
+    }
+    const characters = Object.entries((json.characters as Record<string, { display_name?: string }>) ?? {}).map(
+      ([id, arc]) => ({ id, name: arc?.display_name ?? id, description: undefined }),
+    )
+    return {
+      characters,
+      arcs: [],
+      documentArcsJson: json,
+      mermaidMmd: (json.mermaidMmd as string) ?? null,
+      originalText: (json.originalText as string) ?? '',
+      translatedText: (json.translatedText as string | null) ?? null,
+      originalTextLanguage: (json.originalTextLanguage as string | null) ?? null,
+      nativeIntentStronger: null,
+      youtubeVideo: null,
+    }
+  }
+
   const response = await fetch(`${getBaseUrl()}/api/character-arcs/analyze`, {
     method: 'POST',
     headers: {
@@ -139,6 +197,30 @@ export async function analyzeCharacterArcs(
 export async function analyzeDiscourse(
   payload: CommonRequestPayload,
 ): Promise<DiscourseAnalysisResponse> {
+  if (useGradio()) {
+    const client = await getGradioClient()
+    const result = await client.predict('/analyze_discourse', toGradioPayload(payload))
+    const data = result?.data
+    const [json] = Array.isArray(data) ? data : []
+    const obj = (json as Record<string, unknown>) ?? {}
+    if (obj.error && typeof obj.error === 'string') {
+      throw new Error(obj.error)
+    }
+    if (!data || !Array.isArray(data) || data.length < 3) {
+      throw new Error('Invalid response from Gradio API')
+    }
+    return {
+      segments: (obj.segments as AnalysisSegment[]) ?? [],
+      colorLegend: (obj.colorLegend as ColorLegendEntry[]) ?? DEFAULT_COLOR_LEGEND,
+      mermaidMmd: (obj.mermaidMmd as string) ?? null,
+      originalText: (obj.originalText as string) ?? '',
+      translatedText: (obj.translatedText as string | null) ?? null,
+      originalTextLanguage: (obj.originalTextLanguage as string | null) ?? null,
+      nativeIntentStronger: (obj.nativeIntentStronger as boolean | null) ?? null,
+      youtubeVideo: (obj.youtubeVideo as YouTubeVideoMetadata | null) ?? null,
+    }
+  }
+
   const response = await fetch(`${getBaseUrl()}/api/analysis/discourse`, {
     method: 'POST',
     headers: {

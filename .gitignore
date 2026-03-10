@@ -78,3 +78,6 @@ exports/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+# huggingface
+huggingface/
