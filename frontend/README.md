@@ -19,7 +19,16 @@ Then open the printed local URL (typically `http://localhost:5173`) in your brow
 
 ## API configuration
 
-The frontend expects a backend HTTP API to be reachable at a configurable base URL. Configure this via `VITE_API_BASE_URL`:
+The frontend can talk to either:
+
+- a **local FastAPI backend** (Render / your own server), or
+- the **Hugging Face Space** (Gradio app) that wraps the same engine.
+
+Both are controlled with Vite environment variables.
+
+### Option A – Local FastAPI backend
+
+Configure `VITE_API_BASE_URL` to point at your HTTP API:
 
 - **Local development**: create a `.env` file in the `frontend` directory:
 
@@ -28,6 +37,37 @@ VITE_API_BASE_URL=http://localhost:8000
 ```
 
 - **Production**: set `VITE_API_BASE_URL` in your hosting provider&apos;s environment variables (Netlify, Vercel, etc.) to the public URL of your backend.
+
+If `VITE_GRADIO_SPACE` is **not** set (see below), the frontend will use this base URL and call the FastAPI endpoints directly.
+
+### Option B – Hugging Face backend (Gradio Space)
+
+To use the deployed Hugging Face Space as the backend (instead of your own server), set:
+
+```bash
+VITE_GRADIO_SPACE=mutasim-rehman/discourse
+```
+
+When this variable is set, `src/api/client.ts` will:
+
+- connect to the Space via `@gradio/client`, and
+- call the Gradio functions:
+  - `/_toggle_inputs`
+  - `/analyze_discourse`
+  - `/analyze_character_arcs`
+
+For **private Spaces**, also set an access token:
+
+```bash
+VITE_HF_TOKEN=hf_xxx_your_token_here
+```
+
+Recommended token scopes:
+
+- Inference → **Make calls to Inference Providers**
+- (Optional, for private Spaces) Repositories → **Read access to contents of selected repos** for the Space repo.
+
+If `VITE_GRADIO_SPACE` is set, `VITE_API_BASE_URL` is ignored and all analysis requests go through Hugging Face.
 
 ### Expected endpoints
 
